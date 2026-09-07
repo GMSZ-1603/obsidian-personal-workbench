@@ -429,6 +429,19 @@ const app = {
   plugin.getWeatherExtra = _origEx;
   await plugin.renderDashboard(el, null, state);
 
+  console.log("== 天气来源 ==");
+  const _origW3 = plugin.getWeather;
+  plugin.getWeather = async () => ({ temp: 28, code: 101, text: "晴", list: [] });
+  plugin.settings.qweatherKey = "KEY";
+  await plugin.renderDashboard(el, null, state);
+  check("有key显示和风来源", !!el.querySelector(".wb-wx-src") && el.querySelector(".wb-wx-src").textContent === "和风天气", el.querySelector(".wb-wx-src") && el.querySelector(".wb-wx-src").textContent);
+  plugin.settings.qweatherKey = "";
+  await plugin.renderDashboard(el, null, state);
+  check("无key显示Open-Meteo", el.querySelector(".wb-wx-src").textContent === "Open-Meteo", el.querySelector(".wb-wx-src").textContent);
+  plugin.getWeather = _origW3;
+  plugin.settings.qweatherKey = "TESTKEY";
+  await plugin.renderDashboard(el, null, state);
+
   console.log("== 指数折叠 ==");
   const _origEx2 = plugin.getWeatherExtra;
   plugin.getWeatherExtra = async () => ({

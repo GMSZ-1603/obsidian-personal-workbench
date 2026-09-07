@@ -9376,6 +9376,8 @@ class WorkbenchPlugin extends Plugin {
       const card = left.createDiv({ cls: "wb-card" });
       const hd = card.createDiv({ cls: "wb-card-hd" });
       hd.createDiv({ cls: "wb-card-tt", text: `天气 · ${this.settings.city}` });
+      const _wxSrc = this.settings.qweatherKey && String(this.settings.qweatherKey).trim() ? "和风天气" : "Open-Meteo";
+      hd.createSpan({ cls: "wb-wx-src", text: _wxSrc });
       if (weather && weather.error) {
         card.createDiv({ cls: "wb-wx-empty", text: `天气获取失败：${weather.error}` });
       } else if (weather) {

@@ -151,6 +151,8 @@
 .wb-wx-idx-arrow { font-size: 9px; color: #8b93ab; width: 8px; flex: none; transition: transform .15s; }
 .wb-wx-idx-detail { display: none; margin-top: 4px; padding-left: 13px; border-left: 1px dashed var(--wb-line); }
 .wb-wx-idx-item { font-size: 10.5px; color: #b9bfd2; line-height: 1.5; margin-bottom: 3px; }
+.wb-wx-src { margin-left: auto; font-size: 9px; color: #7d85a0; letter-spacing: .3px; }
+.wb-card-hd { display: flex; align-items: center; }
 .wb-wx-extra { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--wb-line); }
 .wb-wx-e { font-size: 10.5px; color: #b9bfd2; line-height: 1.5; }
 .wb-wx-warn { margin-top: 8px; font-size: 11px; color: var(--wb-warn); background: color-mix(in srgb, var(--wb-warn) 14%, transparent); border-radius: 6px; padding: 3px 8px; }
