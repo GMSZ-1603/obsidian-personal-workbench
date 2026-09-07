@@ -2,6 +2,8 @@
 
 Obsidian 插件：一个集成式的个人工作台独立视图页签，参考 [apex-dashboard](https://github.com/Slow-growing/apex-dashboard)（天气 / 农历 / 万年历 / 年度进度 / 统计横幅）与 [hearth](https://github.com/Slow-growing/hearth)（查询栏）设计。
 
+> **Personal Workbench** is an all-in-one dashboard view for Obsidian. It shows a stats banner, a command/search bar, live weather with lunar info and a daily quote, a full lunar calendar (solar terms, festivals, birthdays, task badges, and per-day almanac), year progress, today's scheduled/due tasks, and birthday reminders parsed from your notes' lunar birth dates. The left and right columns scroll independently so more cards can be added later. Theme: dark indigo. Install from the Releases page (main.js, manifest.json, styles.css, data.json) into `.obsidian/plugins/personal-workbench/`.
+
 ## 功能
 
 - **顶部统计横幅**：总笔记 / 本月新增 / 标签 / 链接 / 连续活跃天数 / 周月发文 / 任务完成率 / 连通度 / 孤立率，底部活跃点阵分 3 行展示（类似 apex）
