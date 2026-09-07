@@ -74,8 +74,8 @@
 .wb-bs-streak .s1 b { font-size: 13px; color: var(--wb-warn); }
 .wb-bs-streak .s1 span { font-size: 10px; color: var(--wb-muted); }
 .wb-bs-streak .s2 { font-size: 10px; color: var(--wb-muted); }
-.wb-bs-heatmap { width: 100%; display: grid; grid-template-columns: repeat(33, 1fr); gap: 4px; justify-items: center; }
-.wb-bs-dot { width: 10px; height: 10px; border-radius: 2px; background: rgba(232,234,242,.08); }
+.wb-bs-heatmap { width: 100%; display: grid; grid-template-columns: repeat(33, 1fr); column-gap: clamp(2px, .3vw, 4px); justify-items: center; }
+.wb-bs-dot { width: min(100%, 10px); aspect-ratio: 1; border-radius: 2px; background: rgba(232,234,242,.08); }
 .wb-bs-dot.l2 { background: rgba(52,211,153,.35); }
 .wb-bs-dot.l3 { background: rgba(52,211,153,.65); }
 .wb-bs-dot.l4 { background: var(--wb-ok); }
