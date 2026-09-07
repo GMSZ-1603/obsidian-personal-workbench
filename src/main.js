@@ -1,0 +1,1065 @@
+/* =====================================================================
+ * 个人工作台 Personal Workbench
+ * 以笔记内代码块 (```workbench) 渲染的个人工作台：
+ *   顶部横幅 / 查询栏 / 天气+当天农历 / 年度进度 / 今日任务 / 生日提醒 / 农历万年历
+ * 依赖：上方已拼接的 lunar-javascript（captured as lunarLib）
+ * ===================================================================== */
+const lunarLib = module.exports; // captured from lunar-javascript UMD bundle
+const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Component, ItemView } = require("obsidian");
+
+const VIEW_TYPE_WORKBENCH = "personal-workbench-view";
+
+/* ---------------- 常量 ---------------- */
+const LUNAR_MONTHS = { 正: 1, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12, 冬: 11, 腊: 12 };
+const CN_NUM = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+const WEEK_CN = ["日", "一", "二", "三", "四", "五", "六"];
+const WMO = {
+  0: ["晴", "☀️"], 1: ["大致晴朗", "🌤️"], 2: ["局部多云", "⛅"], 3: ["阴", "☁️"],
+  45: ["雾", "🌫️"], 48: ["冻雾", "🌫️"], 51: ["小毛毛雨", "🌦️"], 53: ["毛毛雨", "🌦️"], 55: ["大毛毛雨", "🌦️"],
+  56: ["冻毛毛雨", "🌧️"], 57: ["强冻毛毛雨", "🌧️"], 61: ["小雨", "🌧️"], 63: ["中雨", "🌧️"], 65: ["大雨", "🌧️"],
+  66: ["冻雨", "🌧️"], 67: ["强冻雨", "🌧️"], 71: ["小雪", "🌨️"], 73: ["中雪", "🌨️"], 75: ["大雪", "🌨️"], 77: ["雪粒", "🌨️"],
+  80: ["小阵雨", "🌦️"], 81: ["阵雨", "🌦️"], 82: ["强阵雨", "🌧️"], 85: ["小阵雪", "🌨️"], 86: ["大阵雪", "🌨️"],
+  95: ["雷阵雨", "⛈️"], 96: ["雷阵雨伴冰雹", "⛈️"], 99: ["强雷暴伴冰雹", "⛈️"]
+};
+
+const DEFAULT_SETTINGS = {
+  city: "常州",
+  latitude: 31.77,
+  longitude: 119.97,
+  birthdayFile: "生活/生日日期.md",
+  excludeFolders: ["图片", "Templates", "OneNote", "smart-note-agent", ".smartnotes", "微信公众号文章", "统计"],
+  refreshMinutes: 30,
+  openOnStartup: true,
+  bannerEnabled: true,
+  queryEnabled: true,
+  weatherEnabled: true,
+  yearProgressEnabled: true,
+  todayTasksEnabled: true,
+  birthdaysEnabled: true,
+  calendarEnabled: true
+};
+
+/* ---------------- 通用工具 ---------------- */
+function fmtDate(y, m, d) { return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`; }
+function todayStr() { const n = new Date(); return fmtDate(n.getFullYear(), n.getMonth() + 1, n.getDate()); }
+function isLeap(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+function dayOfYear(d) { const s = new Date(d.getFullYear(), 0, 0); return Math.floor((d - s) / 86400000); }
+function daysInYear(y) { return isLeap(y) ? 366 : 365; }
+
+function h(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+/* 农历中文日 -> 数字（初一..三十） */
+function parseCnDay(s) {
+  if (!s) return null;
+  if (s === "三十") return 30;
+  if (s === "二十") return 20;
+  if (s.startsWith("廿")) {
+    const v = CN_NUM[s[1]];
+    return v ? 20 + v : 20;
+  }
+  if (s.startsWith("十")) {
+    if (s === "十") return 10;
+    const v = CN_NUM[s[1]];
+    return v ? 10 + v : null;
+  }
+  if (s.length === 1) return CN_NUM[s] || null;
+  if (s.length === 2) {
+    const a = CN_NUM[s[0]], b = CN_NUM[s[1]];
+    if (a && b) return a * 10 + b;
+  }
+  return null;
+}
+
+/* 农历年中文/阿拉伯数字 -> 数字（如"一九六四年"->1964，"1964年"->1964） */
+function cnYearToNum(s) {
+  if (!s) return null;
+  s = String(s).replace(/年/g, "").trim();
+  if (/^\d+$/.test(s)) {
+    const n = parseInt(s, 10);
+    return n >= 1900 && n <= 2100 ? n : null;
+  }
+  const map = { "〇": 0, "零": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9 };
+  let n = 0;
+  for (const ch of s) {
+    if (map[ch] === undefined) return null;
+    n = n * 10 + map[ch];
+  }
+  return n >= 1900 && n <= 2100 ? n : null;
+}
+
+/* 解析生日日期字符串：优先农历（可带前置农历年，如"一九六四年八月十二"），其次公历（9月16日） */
+function parseBirthdayDate(s) {
+  // 农历：可选前置农历年 + 月日（支持"十一/十二月"）
+  let m = s.match(/([\d〇零一二三四五六七八九]+年)?(正|十一|十二|一|二|三|四|五|六|七|八|九|十|冬|腊)月([一二三四五六七八九十廿]+)/);
+  if (m) {
+    const month = LUNAR_MONTHS[m[2]];
+    const day = parseCnDay(m[3]);
+    if (month && day) {
+      const lunarYear = cnYearToNum(m[1] || "");
+      const r = { type: "lunar", month, day };
+      if (lunarYear) r.lunarYear = lunarYear;
+      return r;
+    }
+  }
+  m = s.match(/^(\d{1,2})月(\d{1,2})日?$/);
+  if (m) {
+    const month = parseInt(m[1], 10), day = parseInt(m[2], 10);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) return { type: "solar", month, day };
+  }
+  return null;
+}
+
+/* 农历某年某月是否存在该日 */
+function lunarHasDay(y, month, day) {
+  try {
+    const lm = lunarLib.LunarMonth.fromYm(y, month);
+    return !!lm && day <= lm.getDayCount();
+  } catch (e) { return false; }
+}
+
+/* 农历生日 -> 该农历年的公历日期 */
+function lunarBirthdaySolar(lunarYear, month, day) {
+  if (!lunarHasDay(lunarYear, month, day)) return null;
+  try {
+    const solar = lunarLib.Lunar.fromYmd(lunarYear, month, day).getSolar();
+    return { y: solar.getYear(), m: solar.getMonth(), d: solar.getDay() };
+  } catch (e) { return null; }
+}
+
+/* 农历出生年 -> 某农历年生日时该周岁 */
+function lunarBirthdayAge(birthLunarYear, eventLunarYear) {
+  return eventLunarYear - birthLunarYear;
+}
+
+function lunarMonthCn(m) {
+  const map = ["", "正", "二", "三", "四", "五", "六", "七", "八", "九", "十", "冬", "腊"];
+  return map[m] || String(m);
+}
+
+/* 农历 (月, 日) -> 中文写法，如 (8,12) -> "八月十二" */
+function lunarCnDate(month, day) {
+  const cnDay = ["", "初一", "初二", "初三", "初四", "初五", "初六", "初七", "初八", "初九", "初十",
+    "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十",
+    "廿一", "廿二", "廿三", "廿四", "廿五", "廿六", "廿七", "廿八", "廿九", "三十"];
+  return lunarMonthCn(month) + "月" + (cnDay[day] || String(day));
+}
+
+/* 每日一签（参考 apex-dashboard）：现代优美语句库，按日期确定性取一条，每天不同 */
+const DAILY_QUOTES = [
+  "生活明朗，万物可爱，人间值得，未来可期。",
+  "慢慢来，谁不是翻山越岭去相爱。",
+  "你若盛开，蝴蝶自来；你若精彩，天自安排。",
+  "所有的美好，都值得等待。",
+  "世界那么大，总有人翻山越岭为你而来。",
+  "愿你眼里有光，心中有海，目之所及皆是美好。",
+  "把日子过成诗，把生活酿成酒。",
+  "心之所向，素履以往；生如逆旅，一苇以航。",
+  "每个不曾起舞的日子，都是对生命的辜负。",
+  "生活不是为了赶路，而是为了感受路。",
+  "慢慢变好，才是给自己最好的礼物。",
+  "万物皆有裂痕，那是光照进来的地方。",
+  "你若温柔，世界便温柔以待。",
+  "把期待降低，把依赖变少，你会过得很好。",
+  "好好生活，慢慢相遇，不卑不亢，清澈善良。",
+  "愿所有的等待，都不被辜负。",
+  "温柔的人，就像星星，自己发光也照亮别人。",
+  "别慌，月亮也正在大海某处迷茫。",
+  "生活虽苦，但你要甜。",
+  "做自己喜欢的事，是这世界最奢侈的自由。",
+  "你未必光芒万丈，但始终温暖有光。",
+  "只要朝着阳光努力向上，日子就会变得单纯而美好。",
+  "梦想不是用来实现的，而是用来一步一步靠近的。",
+  "所有的相遇，都是久别重逢。",
+  "生活的最佳状态，是冷冷清清的风风火火。",
+  "愿你走出半生，归来仍是少年。",
+  "有趣的灵魂，终会相遇。",
+  "该来的都在路上，你要做的就是做好自己。",
+  "不要急，最好的总会在最不经意的时候出现。",
+  "越努力，越幸运；越善良，越美好。",
+  "日子常新，未来不远，慢慢来，比较快。",
+  "心存善意，途遇天使。",
+  "所有的苦，都会化作未来的糖。",
+  "把心安顿好，人生即是坦途。",
+  "岁月静好，现世安稳，愿你我都被温柔以待。",
+  "你眼中的世界，就是你内心的投影。",
+  "生活不是选择，而是热爱。",
+  "不念过往，不畏将来，如此安好。",
+  "愿你三冬暖，愿你春不寒，愿你天黑有灯，下雨有伞。",
+  "心中若有桃花源，何处不是水云间。",
+  "简单点，糊涂点，开心点，风雨里做个大人，阳光下做个孩子。",
+  "你的善良，必须带点锋芒。",
+  "与其互为人间，不如自成宇宙。",
+  "愿你被这个世界温柔以待，即使生命总以刻薄荒芜相欺。",
+  "每一个普通的改变，都将改变普通。",
+  "心宽一寸，路宽一丈；若不是心宽似海，哪有人生风平浪静。",
+  "熬过无人问津的日子，才能拥抱诗和远方。",
+  "幸福不是拥有得多，而是计较得少。",
+  "所有的坚持，都源于热爱；所有的热爱，都值得奔赴。",
+  "愿你历尽千帆，归来仍是少年。"
+];
+
+/* 按日期确定性取一条引用：与 apex 相同的日期哈希 */
+function dailyQuote(y, m, d) {
+  const idx = ((y * 10000 + m * 100 + d) * 2654435761 >>> 0) % DAILY_QUOTES.length;
+  return DAILY_QUOTES[idx];
+}
+
+/* 将一句引用按标点/中点分成两行，使两行字数相近、不挤在一行 */
+function splitQuote(s) {
+  if (!s) return ["", ""];
+  const mid = Math.ceil(s.length / 2);
+  let best = -1, bestDist = s.length;
+  for (let i = 1; i < s.length - 1; i++) {
+    if ("，。、；：,.;!?！？ ".includes(s[i])) {
+      const pos = i + 1;
+      const d = Math.abs(pos - mid);
+      if (d < bestDist) { bestDist = d; best = pos; }
+    }
+  }
+  if (best < 0) return [s.slice(0, mid).trim(), s.slice(mid).trim()];
+  return [s.slice(0, best).trim(), s.slice(best).trim()];
+}
+
+/* 时间戳 -> YYYY-MM-DD */
+function ymdOf(ts) {
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
+/* 连续活跃天数：从今天（或昨天）往前连续有编辑记录的天数 */
+function calcStreak(dateSet) {
+  const p = n => String(n).padStart(2, "0");
+  const key = d => d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  let cur = new Date();
+  if (!dateSet.has(key(cur))) cur.setDate(cur.getDate() - 1);
+  let n = 0;
+  while (dateSet.has(key(cur))) { n++; cur.setDate(cur.getDate() - 1); }
+  return n;
+}
+
+/* ---------------- 数据扫描 ---------------- */
+async function scanTasks(app, settings) {
+  const files = app.vault.getMarkdownFiles();
+  const excl = (settings.excludeFolders || [])
+    .map(f => String(f).replace(/\\/g, "/").replace(/\/+$/, ""))
+    .filter(Boolean);
+  const tasks = [];
+  for (const file of files) {
+    const path = file.path;
+    if (excl.some(f => path === f || path.startsWith(f + "/"))) continue;
+    let content;
+    try { content = await app.vault.cachedRead(file); } catch (e) { continue; }
+    const lines = content.split("\n");
+    for (const line of lines) {
+      const m = line.match(/^\s*[-*+]\s+\[( |x|X)\]\s+(.*)$/);
+      if (!m) continue;
+      const done = m[1] !== " ";
+      const raw = m[2];
+      const scheduled = (raw.match(/⏳\s*(\d{4}-\d{2}-\d{2})/) || [])[1] || null;
+      const due = (raw.match(/📅\s*(\d{4}-\d{2}-\d{2})/) || [])[1] || null;
+      const date = scheduled || due; // 优先 scheduled，无则 due
+      if (!date) continue;
+      const clean = raw
+        .replace(/⏳\s*\d{4}-\d{2}-\d{2}/g, "")
+        .replace(/📅\s*\d{4}-\d{2}-\d{2}/g, "")
+        .replace(/✅\s*\d{4}-\d{2}-\d{2}/g, "")
+        .replace(/🔁.*/g, "")
+        .replace(/#task\b/g, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+      tasks.push({ file: path, text: clean, raw, done, scheduled, due, date });
+    }
+  }
+  return tasks;
+}
+
+async function scanBirthdays(app, settings) {
+  const f = app.vault.getAbstractFileByPath(settings.birthdayFile);
+  if (!f || f.extension !== "md") return [];
+  let content;
+  try { content = await app.vault.cachedRead(f); } catch (e) { return []; }
+  const list = [];
+  for (const raw of content.split("\n")) {
+    let line = raw.trim().replace(/^[-*+]\s+/, "");
+    if (!line || line.startsWith("#") || line.startsWith("---")) continue;
+    const parts = line.split(/[，,]/);
+    if (parts.length < 2) continue;
+    const name = parts[0].trim();
+    let nickname = null;
+    let dateStr;
+    if (parts.length >= 3) {
+      nickname = parts[1].trim();
+      dateStr = parts.slice(2).join("，").trim();
+    } else {
+      dateStr = parts.slice(1).join("，").trim();
+    }
+    const parsed = parseBirthdayDate(dateStr);
+    if (!parsed || !name) continue;
+    list.push({ name, nickname: nickname || name, ...parsed, dateRaw: dateStr });
+  }
+  return list;
+}
+
+async function fetchWeather(settings) {
+  const url =
+    `https://api.open-meteo.com/v1/forecast?latitude=${settings.latitude}&longitude=${settings.longitude}` +
+    `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m` +
+    `&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia%2FShanghai&forecast_days=7`;
+  const res = await requestUrl({ url });
+  if (res.status !== 200) throw new Error("weather status " + res.status);
+  const j = res.json;
+  const cur = j.current;
+  const daily = j.daily;
+  const list = (daily.time || []).map((t, i) => ({
+    date: t,
+    code: daily.weather_code[i],
+    max: Math.round(daily.temperature_2m_max[i]),
+    min: Math.round(daily.temperature_2m_min[i])
+  }));
+  return {
+    temp: Math.round(cur.temperature_2m),
+    feels: Math.round(cur.apparent_temperature),
+    humidity: Math.round(cur.relative_humidity_2m),
+    wind: cur.wind_speed_10m ? Math.round(cur.wind_speed_10m) : 0,
+    code: cur.weather_code,
+    list
+  };
+}
+
+/* ---------------- 主插件 ---------------- */
+class WorkbenchPlugin extends Plugin {
+  async onload() {
+    await this.loadSettings();
+    this.tasksCache = { data: null, stale: true, scanning: false };
+    this.birthdayCache = { data: null, stale: true };
+    this.weatherCache = { data: null, stale: true };
+
+    // 独立视图（个人工作台页签）
+    this.registerView(VIEW_TYPE_WORKBENCH, (leaf) => new WorkbenchView(leaf, this));
+
+    // 启动时自动打开工作台视图
+    if (this.settings.openOnStartup) {
+      this.app.workspace.onLayoutReady(() => {
+        window.setTimeout(() => this.openWorkbenchView(), 400);
+      });
+    }
+
+    this.registerMarkdownCodeBlockProcessor("workbench", (src, el, ctx) => {
+      const state = { year: 0, month: 0, selected: todayStr(), loading: false };
+      const render = () => this.renderDashboard(el, ctx, state);
+      render();
+      const lifecycle = new Component();
+      lifecycle.load();
+      ctx.addChild(lifecycle);
+      const timer = window.setInterval(() => {
+        if (document.contains(el)) render();
+      }, 60000);
+      lifecycle.register(() => window.clearInterval(timer));
+      this.registerEvent(this.app.metadataCache.on("changed", () => {
+        this.tasksCache.stale = true;
+        this.birthdayCache.stale = true;
+        if (document.contains(el)) render();
+      }));
+    });
+
+    this.addCommand({
+      id: "open-workbench",
+      name: "打开个人工作台",
+      callback: () => this.openWorkbenchView()
+    });
+    this.addRibbonIcon("layout-dashboard", "打开个人工作台", () => this.openWorkbenchView());
+
+    this.addSettingTab(new WorkbenchSettingTab(this.app, this));
+  }
+
+  onunload() {}
+
+  async loadSettings() {
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+  }
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
+
+  async openWorkbenchView() {
+    const { workspace } = this.app;
+    const leaves = workspace.getLeavesOfType(VIEW_TYPE_WORKBENCH);
+    if (leaves.length) {
+      await workspace.revealLeaf(leaves[0]);
+      return;
+    }
+    const leaf = workspace.getLeaf(true);
+    await leaf.setViewState({ type: VIEW_TYPE_WORKBENCH, active: true });
+    workspace.revealLeaf(leaf);
+  }
+
+  /* ---- 数据获取（带缓存） ---- */
+  async getTasks(force) {
+    const c = this.tasksCache;
+    if (c.data && !c.stale && !force) return c.data;
+    if (c.scanning) return c.data || [];
+    c.scanning = true;
+    try { c.data = await scanTasks(this.app, this.settings); }
+    catch (e) { console.error("workbench scanTasks", e); }
+    c.scanning = false;
+    c.stale = false;
+    return c.data || [];
+  }
+
+  async getBirthdays(force) {
+    const c = this.birthdayCache;
+    if (c.data && !c.stale && !force) return c.data;
+    try { c.data = await scanBirthdays(this.app, this.settings); }
+    catch (e) { console.error("workbench scanBirthdays", e); }
+    c.stale = false;
+    return c.data || [];
+  }
+
+  async getWeather(force) {
+    const c = this.weatherCache;
+    const maxAge = (this.settings.refreshMinutes || 30) * 60000;
+    if (c.data && !c.stale && Date.now() - (c.time || 0) < maxAge && !force) return c.data;
+    try {
+      c.data = await fetchWeather(this.settings);
+      c.time = Date.now();
+      c.stale = false;
+    } catch (e) {
+      console.warn("workbench weather failed", e);
+      c.stale = false;
+    }
+    return c.data;
+  }
+
+  /* ---- 横幅统计（参考 apex-dashboard）---- */
+  computeStats() {
+    const vault = this.app.vault;
+    const ex = (this.settings.excludeFolders || []).map(f => f.trim().toLowerCase()).filter(f => f && f !== "/");
+    const isEx = p => {
+      if (!ex.length) return false;
+      const q = p.toLowerCase();
+      return ex.some(z => q === z || q.startsWith(z + "/"));
+    };
+    const files = vault.getMarkdownFiles().filter(f => !isEx(f.path) && !f.path.startsWith("."));
+
+    const now = new Date();
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const weekStart = dayStart - 6 * 86400000;
+    const US = 98;
+    const heatStart = dayStart - (US - 1) * 86400000;
+
+    let total = 0, newMonth = 0, newWeek = 0, orphan = 0;
+    const activity = new Array(US).fill(0);
+    const activeDates = new Set();
+    const tags = new Map();
+    const RL = this.app.metadataCache.resolvedLinks || {};
+    const hasOut = new Set(), isTarget = new Set();
+    let totalLinks = 0;
+    for (const [src, targets] of Object.entries(RL)) {
+      if (isEx(src)) continue;
+      let out = 0;
+      for (const [tgt, cnt] of Object.entries(targets)) {
+        if (!isEx(tgt)) { isTarget.add(tgt); totalLinks += cnt; out++; }
+      }
+      if (out > 0) hasOut.add(src);
+    }
+    let totalTasks = 0, doneTasks = 0;
+    for (const file of files) {
+      total++;
+      const ct = file.stat.ctime;
+      if (ct >= monthStart) newMonth++;
+      if (ct >= weekStart) newWeek++;
+      if (ct >= heatStart) {
+        const Q = Math.floor((dayStart - new Date(new Date(ct).getFullYear(), new Date(ct).getMonth(), new Date(ct).getDate()).getTime()) / 86400000);
+        if (Q >= 0 && Q < US) activity[US - 1 - Q]++;
+      }
+      activeDates.add(ymdOf(ct));
+      if (!hasOut.has(file.path) && !isTarget.has(file.path)) orphan++;
+      const cache = this.app.metadataCache.getFileCache(file);
+      if (!cache) continue;
+      const addTags = list => {
+        if (!list) return;
+        for (const t of list) {
+          const tag = String(t).replace(/^#/, "").trim();
+          if (tag) tags.set(tag, (tags.get(tag) || 0) + 1);
+        }
+      };
+      addTags(cache.frontmatter && cache.frontmatter.tags);
+      if (cache.tags) for (const t of cache.tags) { const tag = String(t.tag || "").replace(/^#/, "").trim(); if (tag) tags.set(tag, (tags.get(tag) || 0) + 1); }
+      if (cache.listItems) for (const li of cache.listItems) {
+        if (li.task !== undefined) { totalTasks++; if (li.task === "x" || li.task === "X") doneTasks++; }
+      }
+    }
+    return {
+      totalNotes: total,
+      newThisMonth: newMonth,
+      newThisWeek: newWeek,
+      tagsCount: tags.size,
+      totalLinks,
+      streak: calcStreak(activeDates),
+      orphanRate: total ? Math.round(orphan / total * 100) : 0,
+      avgLinksPerNote: total ? totalLinks / total : 0,
+      connectivity: total ? Math.round((total - orphan) / total * 100) : 0,
+      totalTasks, doneTasks, pendingTasks: totalTasks - doneTasks,
+      taskCompletion: totalTasks ? Math.round(doneTasks / totalTasks * 100) : 0,
+      activity
+    };
+  }
+
+  /* ---- 工作台渲染 ---- */
+  async renderDashboard(el, ctx, state) {
+    if (state.loading) return;
+    state.loading = true;
+    const now = new Date();
+    if (!state.year || !state.month) { state.year = now.getFullYear(); state.month = now.getMonth() + 1; }
+    const solarToday = lunarLib.Solar.fromYmd(now.getFullYear(), now.getMonth() + 1, now.getDate());
+    const lToday = solarToday.getLunar();
+
+    el.empty();
+    const root = el.createDiv({ cls: "wb-dashboard" });
+
+    const [tasks, birthdays, weather] = await Promise.all([
+      this.getTasks(),
+      this.getBirthdays(),
+      this.getWeather()
+    ]);
+
+    // 任务按日期索引（只统计未完成任务；已完成仅用于计数）
+    const activeTasks = tasks.filter(t => !t.done);
+    const tasksByDate = {};
+    for (const t of activeTasks) {
+      (tasksByDate[t.date] = tasksByDate[t.date] || []).push(t);
+    }
+    const doneCount = tasks.filter(t => t.done).length;
+
+    // 生日：每人只取最近一次（含明年），换算为公历日期；显示用称呼+岁数
+    const birthdayEvents = []; // { name, nickname, type, solar:{y,m,d}, label(按笔记原文), age? }
+    const ty = now.getFullYear();
+    const today = todayStr();
+    for (const b of birthdays) {
+      const label = b.dateRaw || lunarCnDate(b.month, b.day); // 完全按笔记中的写法
+      if (b.type === "lunar") {
+        let best = null;
+        for (const ly of [ty - 1, ty, ty + 1]) {
+          const s = lunarBirthdaySolar(ly, b.month, b.day);
+          if (s && fmtDate(s.y, s.m, s.d) >= today && (!best || fmtDate(s.y, s.m, s.d) < fmtDate(best.s.y, best.s.m, best.s.d))) best = { s, ly };
+        }
+        if (best) birthdayEvents.push({
+          name: b.name, nickname: b.nickname || b.name, month: b.month, day: b.day,
+          solar: best.s, label, type: "lunar",
+          age: b.lunarYear != null ? lunarBirthdayAge(b.lunarYear, best.ly) : null
+        });
+      } else {
+        for (const y of [ty - 1, ty]) {
+          const s = { y, m: b.month, d: b.day };
+          if (fmtDate(s.y, s.m, s.d) >= today) { birthdayEvents.push({ name: b.name, nickname: b.nickname || b.name, month: b.month, day: b.day, solar: s, label, type: "solar", age: null }); break; }
+        }
+      }
+    }
+    const upcoming = birthdayEvents
+      .sort((a, b) => fmtDate(a.solar.y, a.solar.m, a.solar.d).localeCompare(fmtDate(b.solar.y, b.solar.m, b.solar.d)))
+      .slice(0, 6);
+
+    /* ===== 横幅：统计（参考 apex-dashboard） ===== */
+    if (this.settings.bannerEnabled) {
+      const stats = this.computeStats();
+      const banner = root.createDiv({ cls: "wb-banner" });
+
+      /* 左侧：总笔记 / 本月 / 标签 / 链接 */
+      const left = banner.createDiv({ cls: "wb-banner-left" });
+      const hero = left.createDiv({ cls: "wb-bs-hero" });
+      hero.createEl("b", { text: String(stats.totalNotes) });
+      hero.createSpan({ text: "总笔记" });
+      const strip = left.createDiv({ cls: "wb-bs-strip" });
+      const mk = (v, l) => { const d = strip.createDiv({ cls: "wb-bs" }); d.createEl("b", { text: v }); d.createSpan({ text: l }); };
+      mk(`本月+${stats.newThisMonth}`, "新增");
+      mk(`#${stats.tagsCount}`, "标签");
+      mk(String(stats.totalLinks), "链接");
+
+      /* 中间：连续活跃天数 + 本周/本月发文（居中）+ 活动点阵（占满中间栏） */
+      const mid = banner.createDiv({ cls: "wb-banner-mid" });
+      const streakRow = mid.createDiv({ cls: "wb-bs-streak" });
+      const s1 = streakRow.createDiv({ cls: "s1" });
+      s1.createEl("b", { text: String(stats.streak) + "天" });
+      s1.createSpan({ text: "活跃天数" });
+      streakRow.createDiv({ cls: "s2", text: `本周${stats.newThisWeek}篇 · 本月${stats.newThisMonth}篇` });
+      const hm = mid.createDiv({ cls: "wb-bs-heatmap" });
+      stats.activity.forEach(v => {
+        const cell = hm.createDiv({ cls: "wb-bs-dot" + (v > 0 ? (v >= 4 ? " l4" : v >= 2 ? " l3" : " l2") : " l0") });
+      });
+
+      /* 右侧：任务完成率 / 连通度 / 孤立率 / 链接每篇 */
+      const right = banner.createDiv({ cls: "wb-banner-right" });
+      const metrics = [
+        ["任务完成率", stats.taskCompletion],
+        ["连通度", stats.connectivity],
+        ["孤立率", stats.orphanRate],
+        ["链接/篇", stats.avgLinksPerNote]
+      ];
+      metrics.forEach(([label, val]) => {
+        const m = right.createDiv({ cls: "wb-bs-metric" });
+        m.createSpan({ cls: "wb-bs-mlabel", text: label });
+        const text = typeof val === "number" && !Number.isInteger(val) ? val.toFixed(1) : String(Math.round(val));
+        m.createEl("b", { text });
+        if (label !== "链接/篇") {
+          const bar = m.createDiv({ cls: "wb-bs-bar" });
+          const fill = bar.createDiv({ cls: "wb-bs-fill" });
+          fill.style.width = Math.min(100, Math.max(0, val)) + "%";
+        }
+      });
+    }
+
+    /* ===== 查询栏 ===== */
+    if (this.settings.queryEnabled) {
+      this.renderQueryBar(root);
+    }
+
+    /* ===== 主网格 ===== */
+    const grid = root.createDiv({ cls: "wb-grid" });
+    const left = grid.createDiv({ cls: "wb-left" });
+
+    /* 天气 + 当天农历 */
+    if (this.settings.weatherEnabled) {
+      const card = left.createDiv({ cls: "wb-card" });
+      const hd = card.createDiv({ cls: "wb-card-hd" });
+      hd.createDiv({ cls: "wb-card-tt", text: `天气 · ${this.settings.city}` });
+      if (weather) {
+        const w = WMO[weather.code] || ["未知", "🌡️"];
+        const wx = card.createDiv({ cls: "wb-weather" });
+        const icon = wx.createDiv({ cls: "wb-wx-icon", text: w[1] });
+        const temp = wx.createDiv({ cls: "wb-wx-temp" });
+        temp.textContent = `${weather.temp}°`;
+        temp.createSpan({ cls: "wb-wx-unit", text: "C" });
+        const meta = wx.createDiv({ cls: "wb-wx-meta" });
+        meta.createDiv({ cls: "wb-wx-cond", text: w[0] });
+        meta.createDiv({ text: `体感 ${weather.feels}°C · 湿度 ${weather.humidity}%` });
+        meta.createDiv({ text: `风 ${weather.wind} km/h` });
+        // 6 天预报
+        const fc = card.createDiv({ cls: "wb-wx-forecast" });
+        const wnames = ["周五", "周六", "周日", "周一", "周二", "周三", "周四"];
+        weather.list.slice(0, 6).forEach((item, i) => {
+          const f = fc.createDiv({ cls: "wb-wx-f" });
+          f.createSpan({ cls: "wb-wx-fday", text: i === 0 ? "今天" : wnames[(now.getDay() - 5 + i + 7) % 7] });
+          const c = WMO[item.code] || ["", ""];
+          f.createSpan({ cls: "wb-wx-ic", text: c[1] });
+          f.createEl("b", { text: `${item.max}°` });
+          f.createSpan({ cls: "wb-wx-flow", text: `${item.min}°` });
+        });
+      } else {
+        const e = card.createDiv({ cls: "wb-wx-empty", text: "天气获取失败，请检查网络或设置中的城市/经纬度" });
+      }
+      // 当天农历信息（参考 apex-dashboard）
+      const lw = card.createDiv({ cls: "wb-wx-lunar" });
+      const gz = lw.createDiv({ cls: "wb-lunar-ganzhi" });
+      gz.textContent = `${lToday.getYearInGanZhi()}年 ${lToday.getShengxiao()} · ${lToday.getMonthInGanZhi()}月 ${lToday.getDayInGanZhi()}日`;
+      const ld = lw.createDiv({ cls: "wb-lunar-date" });
+      ld.textContent = `农历 ${lunarMonthCn(lToday.getMonth())}月${lToday.getDayInChinese()}`;
+      const festNames = [...(lToday.getFestivals() || []), ...(lToday.getOtherFestivals() || []), ...(solarToday.getFestivals() || [])];
+      const jq = lToday.getJieQi();
+      if (jq) festNames.unshift(jq);
+      if (festNames.length) {
+        const ftag = ld.createSpan({ cls: "wb-lunar-fest", text: festNames.slice(0, 2).join(" · ") });
+      }
+      // 每日一签（参考 apex-dashboard：按日期确定性取，每天不同；分两行展示）
+      const lq = lw.createDiv({ cls: "wb-lunar-quote" });
+      splitQuote(dailyQuote(now.getFullYear(), now.getMonth() + 1, now.getDate())).forEach(seg => lq.createDiv({ cls: "wb-lunar-verse", text: seg }));
+    }
+
+    /* 年度进度 */
+    if (this.settings.yearProgressEnabled) {
+      const card = left.createDiv({ cls: "wb-card" });
+      card.createDiv({ cls: "wb-card-hd" }).createDiv({ cls: "wb-card-tt", text: "年度进度" });
+      const pct = Math.round((dayOfYear(now) / daysInYear(now.getFullYear())) * 1000) / 10;
+      const p = card.createDiv({ cls: "wb-progress" });
+      const pv = p.createDiv({ cls: "wb-progress-pct" });
+      pv.textContent = pct + "%";
+      pv.createSpan({ cls: "wb-progress-year", text: String(now.getFullYear()) + "年" });
+      const bar = p.createDiv({ cls: "wb-progress-bar" });
+      const fill = bar.createDiv({ cls: "wb-progress-fill" });
+      fill.style.width = Math.min(100, pct) + "%";
+      const row = p.createDiv({ cls: "wb-progress-row" });
+      row.createSpan({ text: `已过 ${dayOfYear(now)} 天` });
+      row.createSpan({ text: `剩余 ${daysInYear(now.getFullYear()) - dayOfYear(now)} 天` });
+    }
+
+    /* 今日任务 + 逾期待办 */
+    if (this.settings.todayTasksEnabled) {
+      const card = left.createDiv({ cls: "wb-card" });
+      card.createDiv({ cls: "wb-card-hd" }).createDiv({ cls: "wb-card-tt", text: "今日任务" });
+      const todayTasks = (tasksByDate[today] || []).filter(t => !t.done);
+      const tl = card.createDiv({ cls: "wb-tasklist" });
+      if (!todayTasks.length) {
+        tl.createDiv({ cls: "wb-empty", text: "今天没有安排任务 ✨" });
+      } else {
+        todayTasks.slice(0, 5).forEach(t => tl.appendChild(this.renderTaskItem(this, t, now)));
+      }
+      const overdue = activeTasks.filter(t => t.date < today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
+      if (overdue.length) {
+        const sep = card.createDiv({ cls: "wb-divider" });
+        const sh = card.createDiv({ cls: "wb-subhead", text: "逾期待办" });
+        const tl2 = card.createDiv({ cls: "wb-tasklist" });
+        overdue.forEach(t => tl2.appendChild(this.renderTaskItem(this, t, now, true)));
+      }
+    }
+
+    /* 生日提醒 */
+    if (this.settings.birthdaysEnabled) {
+      const card = left.createDiv({ cls: "wb-card" });
+      card.createDiv({ cls: "wb-card-hd" }).createDiv({ cls: "wb-card-tt", text: "生日提醒" });
+      const bl = card.createDiv({ cls: "wb-bday-list" });
+      if (!upcoming.length) {
+        bl.createDiv({ cls: "wb-empty", text: "暂无生日安排" });
+      } else {
+        upcoming.forEach(e => {
+          const row = bl.createDiv({ cls: "wb-bday-item" });
+          const av = row.createDiv({ cls: "wb-bday-avatar", text: (e.name || e.nickname).charAt(0) });
+          row.createSpan({ text: e.nickname || e.name });
+          const tag = row.createSpan({ cls: "wb-bday-tag", text: lunarCnDate(e.month, e.day) });
+          const s = fmtDate(e.solar.y, e.solar.m, e.solar.d);
+          const diff = Math.round((new Date(s + "T00:00:00") - new Date(today + "T00:00:00")) / 86400000);
+          // 剩余天数放在公历日期前面；公历日期带年份
+          if (diff === 0) row.createSpan({ cls: "wb-bday-soon", text: "今天" });
+          else if (diff > 0 && diff <= 30) row.createSpan({ cls: "wb-bday-soon", text: `还有${diff}天` });
+          row.createSpan({ cls: "wb-bday-solar", text: `${e.solar.y}/${e.solar.m}/${e.solar.d}` });
+        });
+      }
+    }
+
+    /* ===== 日历 ===== */
+    if (this.settings.calendarEnabled) {
+      const calCard = grid.createDiv({ cls: "wb-card wb-calcard" });
+      this.renderCalendar(calCard, state, tasksByDate, birthdayEvents);
+    }
+
+    el.setAttribute("data-wb-rendered", "1");
+    state.loading = false;
+  }
+
+  renderTaskItem(plugin, t, now, isOverdue) {
+    const row = h("div", "wb-task");
+    if (t.done) row.addClass("wb-done");
+    if (isOverdue || (t.date < todayStr() && !t.done)) row.addClass("wb-overdue");
+    const box = row.createDiv({ cls: "wb-task-box" });
+    if (t.done) box.textContent = "✓";
+    const txt = row.createDiv({ cls: "wb-task-txt", text: t.text });
+    txt.title = t.file;
+    const date = row.createDiv({ cls: "wb-task-date", text: t.date.slice(5) });
+    row.addEventListener("click", () => {
+      const f = plugin.app.vault.getAbstractFileByPath(t.file);
+      if (f) plugin.app.workspace.getLeaf(false).openFile(f);
+    });
+    return row;
+  }
+
+  /* 查询栏（参考 hearth） */
+  renderQueryBar(root) {
+    const bar = root.createDiv({ cls: "wb-querybar" });
+    const icon = bar.createDiv({ cls: "wb-qb-icon", text: "⌕" });
+    const input = bar.createEl("input", { type: "text", placeholder: "搜索笔记、任务或输入命令…" });
+    input.setAttribute("spellcheck", "false");
+    const hint = bar.createDiv({ cls: "wb-qb-hint" });
+    hint.innerHTML = "↵ 打开 &nbsp;↑↓ 选择 &nbsp;Esc 关闭";
+    const dd = bar.createDiv({ cls: "wb-qb-drop" });
+
+    let items = [];
+    let sel = -1;
+
+    const close = () => { dd.removeClass("wb-show"); sel = -1; };
+    const run = (item) => {
+      close();
+      if (item.kind === "note") {
+        const f = this.app.vault.getAbstractFileByPath(item.path);
+        if (f) this.app.workspace.getLeaf(false).openFile(f);
+      } else if (item.kind === "command") {
+        this.app.commands.executeCommandById(item.id);
+      }
+    };
+
+    const doSearch = () => {
+      const q = input.value.trim().toLowerCase();
+      dd.empty();
+      if (!q) { close(); return; }
+      items = [];
+      // 笔记
+      const notes = this.app.vault.getMarkdownFiles()
+        .filter(f => f.path.toLowerCase().includes(q))
+        .slice(0, 6)
+        .map(f => ({ kind: "note", label: f.basename, sub: f.path, path: f.path }));
+      // 命令
+      const cmds = this.app.commands.listCommands()
+        .filter(c => (c.name || "").toLowerCase().includes(q))
+        .slice(0, 6)
+        .map(c => ({ kind: "command", label: c.name, sub: c.id, id: c.id }));
+      items = [...notes, ...cmds];
+      if (!items.length) {
+        dd.createDiv({ cls: "wb-qb-empty", text: "没有匹配结果" });
+      } else {
+        items.forEach((it, i) => {
+          const row = dd.createDiv({ cls: "wb-qb-item" });
+          const tag = row.createSpan({ cls: "wb-qb-tag", text: it.kind === "note" ? "笔记" : "命令" });
+          row.createSpan({ text: it.label });
+          row.createSpan({ cls: "wb-qb-sub", text: it.sub });
+          row.addEventListener("mousedown", (ev) => { ev.preventDefault(); run(it); });
+          row.addEventListener("mouseenter", () => { sel = i; paint(); });
+        });
+      }
+      sel = -1;
+      paint();
+      dd.addClass("wb-show");
+    };
+    const paint = () => {
+      Array.from(dd.children).forEach((c, i) => c.toggleClass("wb-sel", i === sel));
+    };
+
+    input.addEventListener("input", doSearch);
+    input.addEventListener("focus", doSearch);
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "ArrowDown") { ev.preventDefault(); sel = Math.min(items.length - 1, sel + 1); paint(); }
+      else if (ev.key === "ArrowUp") { ev.preventDefault(); sel = Math.max(0, sel - 1); paint(); }
+      else if (ev.key === "Enter") { if (sel >= 0 && items[sel]) run(items[sel]); else if (items.length) run(items[0]); }
+      else if (ev.key === "Escape") { close(); input.blur(); }
+    });
+    document.addEventListener("mousedown", (ev) => {
+      if (!bar.contains(ev.target)) close();
+    });
+  }
+
+  /* 日历 + 黄历详情 */
+  renderCalendar(card, state, tasksByDate, birthdayEvents) {
+    // 头部
+    const head = card.createDiv({ cls: "wb-cal-head" });
+    const t1 = lunarLib.Solar.fromYmd(state.year, state.month, 1).getLunar();
+    const title = head.createDiv({ cls: "wb-cal-title" });
+    title.textContent = `${state.year}年${state.month}月`;
+    title.createSpan({ cls: "wb-cal-subtitle", text: `农历 ${t1.getYearInGanZhi()}年 · ${lunarMonthCn(t1.getMonth())}月` });
+    const nav = head.createDiv({ cls: "wb-cal-nav" });
+    const mkBtn = (txt, fn) => {
+      const b = nav.createEl("button", { text: txt });
+      b.addEventListener("click", () => { fn(); this.rerenderCalendar(card, state, tasksByDate, birthdayEvents); });
+      return b;
+    };
+    mkBtn("‹", () => { state.month--; if (state.month < 1) { state.month = 12; state.year--; } });
+    mkBtn("今天", () => { const n = new Date(); state.year = n.getFullYear(); state.month = n.getMonth() + 1; state.selected = todayStr(); });
+    mkBtn("›", () => { state.month++; if (state.month > 12) { state.month = 1; state.year++; } });
+
+    // 图例
+    const legend = card.createDiv({ cls: "wb-cal-legend" });
+    legend.createSpan({ text: "● 有任务", cls: "wb-lg-task" });
+    legend.createSpan({ text: "● 生日", cls: "wb-lg-bday" });
+    legend.createSpan({ text: "● 节气/节日", cls: "wb-lg-term" });
+
+    // 网格
+    const grid = card.createDiv({ cls: "wb-cal-grid" });
+    ["一", "二", "三", "四", "五", "六", "日"].forEach((w, i) => {
+      grid.createDiv({ cls: i >= 5 ? "wb-dow wb-weekend" : "wb-dow", text: w });
+    });
+
+    const first = new Date(state.year, state.month - 1, 1);
+    const startPad = (first.getDay() + 6) % 7;
+    const dim = new Date(state.year, state.month, 0).getDate();
+    const prevDim = new Date(state.year, state.month - 1, 0).getDate();
+    const ty = new Date().getFullYear(), tm = new Date().getMonth() + 1, td = new Date().getDate();
+
+    const cells = [];
+    for (let i = 0; i < startPad; i++) {
+      const d = prevDim - startPad + 1 + i;
+      cells.push({ y: state.month === 1 ? state.year - 1 : state.year, m: state.month === 1 ? 12 : state.month - 1, d, other: true });
+    }
+    for (let d = 1; d <= dim; d++) cells.push({ y: state.year, m: state.month, d });
+    let next = 1;
+    while (cells.length % 7 !== 0) {
+      cells.push({ y: state.month === 12 ? state.year + 1 : state.year, m: state.month === 12 ? 1 : state.month + 1, d: next++, other: true });
+    }
+
+    const birthdayByKey = {};
+    for (const e of birthdayEvents) {
+      const key = fmtDate(e.solar.y, e.solar.m, e.solar.d);
+      (birthdayByKey[key] = birthdayByKey[key] || []).push(e);
+    }
+
+    for (const c of cells) {
+      const key = fmtDate(c.y, c.m, c.d);
+      const cell = grid.createDiv({ cls: "wb-day" });
+      if (c.other) cell.addClass("wb-other");
+      const isToday = c.y === ty && c.m === tm && c.d === td;
+      if (isToday) cell.addClass("wb-today");
+      if (state.selected === key) cell.addClass("wb-sel");
+      const dow = new Date(c.y, c.m - 1, c.d).getDay();
+      if (dow === 0 || dow === 6) cell.addClass("wb-weekend");
+
+      const solar = lunarLib.Solar.fromYmd(c.y, c.m, c.d);
+      const lunar = solar.getLunar();
+      const jq = lunar.getJieQi();
+      const lfest = lunar.getFestivals() || [];
+      const sfest = solar.getFestivals() || [];
+      const oFest = lunar.getOtherFestivals() || [];
+      const festName = jq || lfest[0] || sfest[0] || "";
+
+      const num = cell.createDiv({ cls: "wb-day-num", text: String(c.d) });
+      if (festName) {
+        cell.createDiv({ cls: "wb-day-fest", text: festName });
+      } else {
+        cell.createDiv({ cls: "wb-day-lunar", text: lunar.getDayInChinese() });
+      }
+      const badges = cell.createDiv({ cls: "wb-day-badges" });
+      if (jq) badges.createSpan({ cls: "wb-badge wb-bg-term", title: "节气" });
+      if (lfest.length || sfest.length) badges.createSpan({ cls: "wb-badge wb-bg-fest", title: "节日" });
+      const tasks = tasksByDate[key];
+      if (tasks && tasks.length) {
+        badges.createSpan({ cls: "wb-badge wb-bg-task", title: `${tasks.length} 个任务` });
+        const cnt = cell.createDiv({ cls: "wb-day-tcnt", text: String(tasks.length) });
+        const hasOverdue = tasks.some(t => t.date < todayStr());
+        if (hasOverdue) cnt.addClass("wb-overdue");
+      }
+      const bd = birthdayByKey[key];
+      if (bd && bd.length) {
+        cell.createDiv({ cls: "wb-day-bd", text: "🎂 " + bd.map(e => (e.nickname || e.name) + (e.age != null ? e.age + "岁" : "")).join(",") });
+      }
+
+      cell.addEventListener("click", () => {
+        state.selected = key;
+        this.renderDayDetail(card, state, tasksByDate, birthdayByKey, key);
+        card.querySelectorAll(".wb-day").forEach(el2 => el2.toggleClass("wb-sel", el2 === cell));
+      });
+    }
+
+    this.renderDayDetail(card, state, tasksByDate, birthdayByKey, state.selected);
+  }
+
+  rerenderCalendar(card, state, tasksByDate, birthdayEvents) {
+    card.empty();
+    this.renderCalendar(card, state, tasksByDate, birthdayEvents);
+  }
+
+  renderDayDetail(card, state, tasksByDate, birthdayByKey, key) {
+    const old = card.querySelector(".wb-daydetail");
+    if (old) old.remove();
+    const [y, m, d] = key.split("-").map(Number);
+    const detail = card.createDiv({ cls: "wb-daydetail" });
+    const left = detail.createDiv({ cls: "wb-dd-left" });
+    const solar = lunarLib.Solar.fromYmd(y, m, d);
+    const lunar = solar.getLunar();
+    const now = new Date();
+
+    const d1 = left.createDiv({ cls: "wb-dd-date" });
+    const wk = new Date(y, m - 1, d).getDay();
+    d1.textContent = `${m}月${d}日 · 星期${WEEK_CN[wk]}`;
+    if (key === todayStr()) d1.addClass("wb-dd-today");
+    left.createDiv({ cls: "wb-dd-lunar", text: `农历 ${lunar.getYearInGanZhi()}年 ${lunarMonthCn(lunar.getMonth())}月${lunar.getDayInChinese()}` });
+    left.createDiv({ cls: "wb-dd-ganzhi", text: `${lunar.getMonthInGanZhi()}月 ${lunar.getDayInGanZhi()}日 · ${lunar.getShengxiao()}` });
+    const jq = lunar.getJieQi();
+    if (jq) left.createDiv({ cls: "wb-dd-jieqi", text: `⚡ ${jq}` });
+    const festAll = [...(lunar.getFestivals() || []), ...(solar.getFestivals() || []), ...(lunar.getOtherFestivals() || [])];
+    if (festAll.length) left.createDiv({ cls: "wb-dd-fest", text: "🎉 " + festAll.slice(0, 3).join(" · ") });
+    const bd = birthdayByKey[key];
+    if (bd && bd.length) left.createDiv({ cls: "wb-dd-bd", text: "🎂 " + bd.map(e => (e.nickname || e.name) + (e.age != null ? " " + e.age + "岁" : "") + "（" + e.label + "）").join("，") });
+
+    const yi = lunar.getDayYi() || [];
+    const ji = lunar.getDayJi() || [];
+    const yiji = left.createDiv({ cls: "wb-dd-yiji" });
+    yiji.createDiv({ cls: "wb-yi", text: "宜：" + (yi.slice(0, 8).join(" ") || "—") });
+    yiji.createDiv({ cls: "wb-ji", text: "忌：" + (ji.slice(0, 8).join(" ") || "—") });
+
+    const right = detail.createDiv({ cls: "wb-dd-right" });
+    const tasks = tasksByDate[key] || [];
+    const overdueN = tasks.filter(t => t.date < todayStr()).length;
+    right.createDiv({ cls: "wb-dd-tt", text: tasks.length ? `当天任务（${overdueN} 项逾期）` : "当天没有任务安排" });
+    if (tasks.length) {
+      const tl = right.createDiv({ cls: "wb-tasklist" });
+      tasks.forEach(t => {
+        const row = this.renderTaskItem(this, t, now);
+        const src = row.createDiv({ cls: "wb-task-src", text: t.file });
+        tl.appendChild(row);
+      });
+    } else {
+      right.createDiv({ cls: "wb-empty", text: "✨ 清闲的一天" });
+    }
+  }
+}
+
+/* ---------------- 独立视图：个人工作台页签 ---------------- */
+class WorkbenchView extends ItemView {
+  constructor(leaf, plugin) {
+    super(leaf);
+    this.plugin = plugin;
+    this.state = { year: 0, month: 0, selected: todayStr(), loading: false };
+  }
+  getViewType() { return VIEW_TYPE_WORKBENCH; }
+  getDisplayText() { return "个人工作台"; }
+  getIcon() { return "layout-dashboard"; }
+
+  async onOpen() {
+    this.contentEl.addClass("wb-view-container");
+    await this.render();
+    this.register(window.setInterval(() => { if (this.contentEl) this.render(); }, 60000));
+    this.registerEvent(this.app.metadataCache.on("changed", () => {
+      this.plugin.tasksCache.stale = true;
+      this.plugin.birthdayCache.stale = true;
+      if (this.contentEl) this.render();
+    }));
+  }
+
+  async onClose() {}
+
+  async render() {
+    if (this.state.loading || !this.contentEl) return;
+    await this.plugin.renderDashboard(this.contentEl, null, this.state);
+  }
+}
+
+/* ---------------- 设置页 ---------------- */
+class WorkbenchSettingTab extends PluginSettingTab {
+  constructor(app, plugin) { super(app, plugin); this.plugin = plugin; }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    containerEl.createEl("h2", { text: "个人工作台" });
+
+    new Setting(containerEl).setName("城市").setDesc("天气卡片显示的城市名（仅展示用）")
+      .addText(t => t.setValue(this.plugin.settings.city).onChange(async v => { this.plugin.settings.city = v; await this.plugin.saveSettings(); }));
+
+    new Setting(containerEl).setName("纬度 / 经度").setDesc("天气数据使用（Open-Meteo，免费无需 key）。常州默认 31.77 / 119.97")
+      .addText(t => t.setPlaceholder("纬度").setValue(String(this.plugin.settings.latitude)).onChange(async v => {
+        const n = parseFloat(v); if (!isNaN(n)) { this.plugin.settings.latitude = n; this.plugin.weatherCache.stale = true; await this.plugin.saveSettings(); }
+      }))
+      .addText(t => t.setPlaceholder("经度").setValue(String(this.plugin.settings.longitude)).onChange(async v => {
+        const n = parseFloat(v); if (!isNaN(n)) { this.plugin.settings.longitude = n; this.plugin.weatherCache.stale = true; await this.plugin.saveSettings(); }
+      }));
+
+    new Setting(containerEl).setName("生日文件").setDesc("存放「姓名，农历月日」的笔记路径（相对库根目录）")
+      .addText(t => t.setValue(this.plugin.settings.birthdayFile).onChange(async v => { this.plugin.settings.birthdayFile = v; this.plugin.birthdayCache.stale = true; await this.plugin.saveSettings(); }));
+
+    new Setting(containerEl).setName("任务排除文件夹").setDesc("扫描任务时排除的文件夹，逗号分隔")
+      .addText(t => t.setValue(this.plugin.settings.excludeFolders.join(",")).onChange(async v => {
+        this.plugin.settings.excludeFolders = v.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+        this.plugin.tasksCache.stale = true;
+        await this.plugin.saveSettings();
+      }));
+
+    new Setting(containerEl).setName("数据刷新间隔（分钟）").setDesc("天气等数据的刷新间隔")
+      .addSlider(s => s.setLimits(5, 180, 5).setValue(this.plugin.settings.refreshMinutes).setDynamicTooltip().onChange(async v => { this.plugin.settings.refreshMinutes = v; await this.plugin.saveSettings(); }));
+
+    new Setting(containerEl).setName("启动时自动打开工作台").setDesc("打开 Obsidian 时自动打开「个人工作台」视图页签")
+      .addToggle(t => t.setValue(this.plugin.settings.openOnStartup).onChange(async v => { this.plugin.settings.openOnStartup = v; await this.plugin.saveSettings(); }));
+
+    containerEl.createEl("h3", { text: "模块开关" });
+    ["bannerEnabled", "queryEnabled", "weatherEnabled", "yearProgressEnabled", "todayTasksEnabled", "birthdaysEnabled", "calendarEnabled"].forEach(k => {
+      const label = { bannerEnabled: "统计横幅", queryEnabled: "查询栏", weatherEnabled: "天气+当天农历", yearProgressEnabled: "年度进度", todayTasksEnabled: "今日任务", birthdaysEnabled: "生日提醒", calendarEnabled: "农历万年历" }[k];
+      new Setting(containerEl).setName(label)
+        .addToggle(t => t.setValue(this.plugin.settings[k]).onChange(async v => { this.plugin.settings[k] = v; await this.plugin.saveSettings(); }));
+    });
+  }
+}
+
+/* 测试钩子（仅用于构建期自测） */
+if (typeof globalThis !== "undefined") {
+  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, lunarLib };
+}
+
+module.exports = WorkbenchPlugin;

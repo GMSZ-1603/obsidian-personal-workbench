@@ -1,0 +1,24 @@
+{
+  "city": "常州",
+  "latitude": 31.77,
+  "longitude": 119.97,
+  "birthdayFile": "生活/生日日期.md",
+  "excludeFolders": [
+    "图片",
+    "Templates",
+    "OneNote",
+    "smart-note-agent",
+    ".smartnotes",
+    "微信公众号文章",
+    "统计"
+  ],
+  "refreshMinutes": 30,
+  "openOnStartup": true,
+  "bannerEnabled": true,
+  "queryEnabled": true,
+  "weatherEnabled": true,
+  "yearProgressEnabled": true,
+  "todayTasksEnabled": true,
+  "birthdaysEnabled": true,
+  "calendarEnabled": true
+}

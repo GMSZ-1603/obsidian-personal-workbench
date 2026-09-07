@@ -1,0 +1,263 @@
+/* 无头渲染测试：用真实库数据验证 renderDashboard 输出结构 */
+const fs = require("fs");
+const path = require("path");
+const Module = require("module");
+
+const VAULT = "D:\\Obsidian\\Second Brain";
+const stub = path.join(__dirname, "obsidian-stub.js");
+const origResolve = Module._resolveFilename;
+Module._resolveFilename = function (request, ...args) {
+  if (request === "obsidian") return stub;
+  return origResolve.call(this, request, ...args);
+};
+require(path.join(__dirname, "dist", "main.js"));
+const WorkbenchPlugin = module.parent ? module.parent.exports : null;
+const PluginClass = globalThis.__wb_test ? require(path.join(__dirname, "dist", "main.js")) : null;
+
+// 重新 require 拿到插件类（module.exports 已被插件覆盖）
+const loaded = require(path.join(__dirname, "dist", "main.js"));
+const WB = loaded.default || loaded;
+if (typeof WB !== "function") { console.error("无法获取 WorkbenchPlugin 类"); process.exit(1); }
+
+/* ---------- 简易 DOM 假实现 ---------- */
+class FakeEl {
+  constructor(tag = "div") {
+    this.tag = tag;
+    this.children = [];
+    this._cls = new Set();
+    this._attrs = {};
+    this._text = "";
+    this._html = "";
+    this.style = {};
+    this.listeners = {};
+    this.parentEl = null;
+    this.value = "";
+  }
+  get className() { return [...this._cls].join(" "); }
+  set className(v) { this._cls = new Set(String(v).split(/\s+/).filter(Boolean)); }
+  addClass(c) { String(c).split(/\s+/).filter(Boolean).forEach(x => this._cls.add(x)); return this; }
+  removeClass(c) { this._cls.delete(c); return this; }
+  toggleClass(c, on) {
+    if (on === undefined) { if (this._cls.has(c)) this._cls.delete(c); else this._cls.add(c); }
+    else if (on) this._cls.add(c); else this._cls.delete(c);
+    return this;
+  }
+  hasClass(c) { return this._cls.has(c); }
+  setAttribute(k, v) { this._attrs[k] = String(v); return this; }
+  getAttribute(k) { return this._attrs[k]; }
+  get textContent() { return this._text; }
+  set textContent(v) { this._text = String(v); this._html = ""; }
+  get innerHTML() { return this._html; }
+  set innerHTML(v) { this._html = String(v); this._text = ""; }
+  set title(v) { this._attrs["title"] = v; }
+  get title() { return this._attrs["title"]; }
+  appendChild(c) { c.parentEl = this; this.children.push(c); return c; }
+  append(c) { return this.appendChild(c); }
+  empty() { this.children = []; this._text = ""; return this; }
+  remove() { if (this.parentEl) { const i = this.parentEl.children.indexOf(this); if (i >= 0) this.parentEl.children.splice(i, 1); } }
+  contains(node) {
+    let n = node;
+    while (n) { if (n === this) return true; n = n.parentEl; }
+    return false;
+  }
+  addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); return this; }
+  fire(ev, e) { (this.listeners[ev] || []).forEach(fn => fn(e || {})); }
+  createEl(tag, opts = {}) {
+    const c = new FakeEl(tag);
+    if (opts.cls) c.addClass(opts.cls);
+    if (opts.text != null) c.textContent = opts.text;
+    if (opts.placeholder) c.setAttribute("placeholder", opts.placeholder);
+    if (opts.type) c.setAttribute("type", opts.type);
+    this.appendChild(c);
+    return c;
+  }
+  createDiv(opts) { return this.createEl("div", opts); }
+  createSpan(opts) { return this.createEl("span", opts); }
+  querySelector(sel) {
+    const cls = sel.replace(/^\./, "");
+    const walk = (n) => {
+      for (const c of n.children) { if (c._cls.has(cls)) return c; const r = walk(c); if (r) return r; }
+      return null;
+    };
+    return walk(this);
+  }
+  querySelectorAll(sel) {
+    const cls = sel.replace(/^\./, "");
+    const out = [];
+    const walk = (n) => { for (const c of n.children) { if (c._cls.has(cls)) out.push(c); walk(c); } };
+    walk(this);
+    return out;
+  }
+}
+global.document = {
+  createElement: (t) => new FakeEl(t),
+  addEventListener() {},
+  contains: () => true
+};
+global.window = { setInterval: () => 1, clearInterval: () => {}, setTimeout: () => 1 };
+global.navigator = {};
+
+/* ---------- mock app（接真实库） ---------- */
+function listMd(dir, base) {
+  const out = [];
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, ent.name);
+    const rel = path.join(base || "", ent.name).replace(/\\/g, "/");
+    if (ent.name === ".obsidian") continue;
+    if (ent.isDirectory()) out.push(...listMd(full, rel));
+    else if (ent.name.endsWith(".md")) {
+      const st = fs.statSync(full);
+      out.push({ path: rel, basename: ent.name.replace(/\.md$/, ""), name: ent.name, extension: "md", stat: { ctime: st.ctimeMs, mtime: st.mtimeMs } });
+    }
+  }
+  return out;
+}
+const files = listMd(VAULT);
+const app = {
+  vault: {
+    getMarkdownFiles: () => files,
+    cachedRead: async (f) => { try { return fs.readFileSync(path.join(VAULT, f.path), "utf8"); } catch (e) { return ""; } },
+    getAbstractFileByPath: (p) => {
+      const full = path.join(VAULT, p);
+      if (fs.existsSync(full)) return { path: p.replace(/\\/g, "/"), extension: path.extname(p).replace(".", "") };
+      return null;
+    }
+  },
+  workspace: { getLeaf: () => ({ openFile: async () => {} }) },
+  metadataCache: {
+    on: () => ({}),
+    resolvedLinks: {},
+    getFileCache: () => null
+  },
+  commands: { listCommands: () => [], executeCommandById: () => {} }
+};
+
+/* ---------- 运行渲染 ---------- */
+(async () => {
+  const plugin = new WB(app, {});
+  plugin.settings = {
+    city: "常州", latitude: 31.77, longitude: 119.97,
+    birthdayFile: "生活/生日日期.md",
+    excludeFolders: ["图片", "Templates", "OneNote", "smart-note-agent", ".smartnotes", "微信公众号文章", "统计"],
+    refreshMinutes: 30,
+    bannerEnabled: true, queryEnabled: true, weatherEnabled: true,
+    yearProgressEnabled: true, todayTasksEnabled: true, birthdaysEnabled: true, calendarEnabled: true
+  };
+  plugin.tasksCache = { data: null, stale: true, scanning: false };
+  plugin.birthdayCache = { data: null, stale: true };
+  plugin.weatherCache = { data: null, stale: true };
+  // 天气用固定 mock 保证确定性
+  plugin.getWeather = async () => ({
+    temp: 30, feels: 33, humidity: 69, wind: 6, code: 3,
+    list: [
+      { date: "2026-09-03", code: 3, max: 29, min: 24 },
+      { date: "2026-09-04", code: 3, max: 30, min: 23 },
+      { date: "2026-09-05", code: 53, max: 29, min: 23 },
+      { date: "2026-09-06", code: 2, max: 29, min: 22 },
+      { date: "2026-09-07", code: 2, max: 28, min: 21 },
+      { date: "2026-09-08", code: 3, max: 28, min: 21 }
+    ]
+  });
+
+  const el = new FakeEl("div");
+  const state = { year: 2026, month: 9, selected: "2026-09-03", loading: false };
+  await plugin.renderDashboard(el, null, state);
+
+  let pass = 0, fail = 0;
+  const check = (name, cond, extra) => {
+    if (cond) { pass++; console.log("  ✓", name); }
+    else { fail++; console.log("  ✗", name, extra || ""); }
+  };
+  const textOf = (n) => {
+    let s = n.textContent || "";
+    for (const c of n.children) s += textOf(c);
+    return s;
+  };
+
+  console.log("== 统计横幅 ==");
+  const banner = el.querySelector(".wb-banner");
+  const bannerText = banner ? textOf(banner) : "";
+  check("横幅存在", !!banner);
+  check("总笔记", bannerText.includes("总笔记"));
+  check("活跃天数", bannerText.includes("活跃天数"));
+  check("周/月发文", bannerText.includes("本周") && bannerText.includes("本月"));
+  check("任务完成率", bannerText.includes("任务完成率"));
+  check("连通度", bannerText.includes("连通度"));
+  check("孤立率", bannerText.includes("孤立率"));
+  check("链接/篇", bannerText.includes("链接/篇"));
+  const dots = el.querySelectorAll(".wb-bs-dot");
+  check("活动点阵98格", dots.length === 98, "got " + dots.length);
+  const hero = banner && banner.querySelector(".wb-bs-hero");
+  const heroB = hero && hero.children.find(c => c.tag === "b");
+  check("总笔记数>0", !!heroB && parseInt(heroB.textContent) > 0, heroB && heroB.textContent);
+
+  console.log("== 查询栏 ==");
+  check("查询栏存在", !!el.querySelector(".wb-querybar"));
+
+  console.log("== 天气 + 当天农历 ==");
+  check("天气温度", !!el.querySelector(".wb-wx-temp") && el.querySelector(".wb-wx-temp").textContent.includes("30"));
+  check("天气状况", !!el.querySelector(".wb-wx-cond") && el.querySelector(".wb-wx-cond").textContent.includes("阴"));
+  const wxl = el.querySelector(".wb-wx-lunar");
+  const T = globalThis.__wb_test;
+  const _now = new Date();
+  const _l = T.lunarLib.Solar.fromYmd(_now.getFullYear(), _now.getMonth() + 1, _now.getDate()).getLunar();
+  const _mCn = ["", "正", "二", "三", "四", "五", "六", "七", "八", "九", "十", "冬", "腊"][_l.getMonth()];
+  check("农历干支", !!wxl && textOf(wxl).includes(_l.getYearInGanZhi() + "年"));
+  check("农历日期(今日)", !!wxl && textOf(wxl).includes(`农历 ${_mCn}月${_l.getDayInChinese()}`), textOf(wxl));
+  const _fest = _l.getOtherFestivals() || [];
+  check("节日标签", !!wxl && (_fest.length === 0 || textOf(wxl).includes(_fest[0])), textOf(wxl) + " / " + _fest.join(","));
+  // 每日一签：与当日日期哈希结果一致
+  const qv = el.querySelector(".wb-lunar-verse");
+  const expectQ = T.dailyQuote(_now.getFullYear(), _now.getMonth() + 1, _now.getDate());
+  const qBlock = el.querySelector(".wb-lunar-quote");
+  check("引用语为当日一签", !!qBlock && textOf(qBlock) === expectQ, qBlock && textOf(qBlock) + " / " + expectQ);
+  const qLines = qBlock ? qBlock.querySelectorAll(".wb-lunar-verse") : [];
+  check("引用语分两行", qLines.length === 2, "got " + qLines.length);
+  if (qLines.length === 2) check("两行字数相近", Math.abs(qLines[0].textContent.length - qLines[1].textContent.length) <= 3, qLines[0].textContent + " / " + qLines[1].textContent);
+  check("引用语无'每日一签'字样", !!qBlock && !textOf(qBlock).includes("每日一签"), qBlock && textOf(qBlock));
+  const fc = el.querySelectorAll(".wb-wx-f");
+  check("6天预报", fc.length === 6, "got " + fc.length);
+
+  console.log("== 年度进度 ==");
+  const pct = el.querySelector(".wb-progress-pct");
+  const _doy = T.dayOfYear(_now);
+  const _din = T.daysInYear(_now.getFullYear());
+  const _pct = (_doy / _din * 100).toFixed(1);
+  check("进度与今日一致", !!pct && pct.textContent.includes(_pct), pct && pct.textContent + " / " + _pct);
+
+  console.log("== 今日任务/生日 ==");
+  check("今日任务卡片", !!el.querySelector(".wb-tasklist"));
+  check("生日提醒卡片", !!el.querySelector(".wb-bday-list"));
+  const bdText = textOf(el.querySelector(".wb-bday-list") || { textContent: "", children: [] });
+  check("生日提醒含称呼", bdText.includes("爸爸"), bdText);
+  check("生日卡不显示岁数", !bdText.includes("岁"), bdText);
+  check("头像为姓(卢)", bdText.includes("卢"), bdText);
+  check("农历只显示月日(八月十二)", bdText.includes("八月十二") && !bdText.includes("一九六四年"), bdText);
+  check("农历无数字(不含'农历八1')", !bdText.includes("农历八1") && !bdText.includes("八12"), bdText);
+  check("公历带年(2026/9/22)", bdText.includes("2026/9/22"), bdText);
+  const _diff = Math.round((new Date("2026-09-22T00:00:00") - new Date(`${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}-${String(_now.getDate()).padStart(2, "0")}T00:00:00`)) / 86400000);
+  check("剩余天数在公历前", _diff > 0 && bdText.includes(`还有${_diff}天2026/9/22`), bdText);
+  check("生日卡不显示姓名", !bdText.includes("卢小南"), bdText);
+
+  console.log("== 日历 ==");
+  const cells = el.querySelectorAll(".wb-day");
+  check("日历格子数(2026-09=35)", cells.length === 35, "got " + cells.length);
+  const festCells = el.querySelectorAll(".wb-day-fest").map(c => c.textContent);
+  check("白露", festCells.includes("白露"), festCells.join(","));
+  check("秋分", festCells.includes("秋分"), festCells.join(","));
+  check("中秋节", festCells.includes("中秋节"), festCells.join(","));
+  const bdCells = el.querySelectorAll(".wb-day-bd").map(c => c.textContent);
+  check("日历生日显示称呼", bdCells.some(t => t.includes("爸爸") && t.includes("62岁")), bdCells.join(","));
+  check("日历生日不显示姓名", !bdCells.some(t => t.includes("卢小南")), bdCells.join(","));
+
+  console.log("== 日期详情(黄历) ==");
+  const dd = el.querySelector(".wb-daydetail");
+  check("详情面板存在", !!dd);
+  const ddText = textOf(dd);
+  check("宜", ddText.includes("宜"));
+  check("忌", ddText.includes("忌"));
+  check("干支", ddText.includes("庚辰"));
+
+  console.log("\n通过 " + pass + " / " + (pass + fail));
+  process.exit(fail ? 1 : 0);
+})();
