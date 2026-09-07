@@ -145,6 +145,12 @@
 .wb-wx-unit { font-size: 16px; color: var(--wb-muted); font-weight: 400; }
 .wb-wx-meta { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--wb-muted); }
 .wb-wx-cond { font-size: 13px; color: var(--wb-text); font-weight: 500; }
+.wb-wx-idx { margin-top: 2px; }
+.wb-wx-idx-hd { cursor: pointer; font-size: 10.5px; color: #b9bfd2; user-select: none; display: flex; align-items: center; gap: 5px; }
+.wb-wx-idx-hd:hover { color: #e6e9f5; }
+.wb-wx-idx-arrow { font-size: 9px; color: #8b93ab; width: 8px; flex: none; transition: transform .15s; }
+.wb-wx-idx-detail { display: none; margin-top: 4px; padding-left: 13px; border-left: 1px dashed var(--wb-line); }
+.wb-wx-idx-item { font-size: 10.5px; color: #b9bfd2; line-height: 1.5; margin-bottom: 3px; }
 .wb-wx-extra { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--wb-line); }
 .wb-wx-e { font-size: 10.5px; color: #b9bfd2; line-height: 1.5; }
 .wb-wx-warn { margin-top: 8px; font-size: 11px; color: var(--wb-warn); background: color-mix(in srgb, var(--wb-warn) 14%, transparent); border-radius: 6px; padding: 3px 8px; }

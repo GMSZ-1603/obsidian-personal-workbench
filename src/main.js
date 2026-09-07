@@ -490,7 +490,7 @@ async function fetchQWeatherExtra(settings, _req) {
   if (air && air.now) out.air = { aqi: air.now.aqi, category: air.now.category, pm2p5: air.now.pm2p5 };
   const idx = j(idxR);
   if (idx && idx.daily && idx.daily.length) {
-    const icons = { 1: "👕", 2: "☀️", 3: "🤧", 5: "🏃" };
+    const icons = { 1: "🏃", 2: "🚿", 3: "👕", 4: "🎣", 5: "☀️", 8: "😊" };
     out.indices = idx.daily.slice(0, 4).map(d => ({ icon: icons[d.type] || "·", name: d.name, text: d.text }));
   }
   const ast = j(astR);
@@ -910,7 +910,19 @@ class WorkbenchPlugin extends Plugin {
           const ex = card.createDiv({ cls: "wb-wx-extra" });
           if (extra.sunrise) ex.createDiv({ cls: "wb-wx-e", text: `🌅 ${extra.sunrise} · 🌇 ${extra.sunset}` });
           if (extra.air && extra.air.aqi != null) ex.createDiv({ cls: "wb-wx-e", text: `空气质量 ${extra.air.category} · AQI ${extra.air.aqi} · PM2.5 ${extra.air.pm2p5}` });
-          if (extra.indices && extra.indices.length) ex.createDiv({ cls: "wb-wx-e", text: extra.indices.map(i => `${i.icon} ${i.name} ${i.text}`).join(" · ") });
+          if (extra.indices && extra.indices.length) {
+            const row = ex.createDiv({ cls: "wb-wx-idx" });
+            const head = row.createDiv({ cls: "wb-wx-idx-hd" });
+            const arrow = head.createSpan({ cls: "wb-wx-idx-arrow", text: "▸" });
+            head.createSpan({ cls: "wb-wx-idx-names", text: "指数 " + extra.indices.map(i => i.name).join("·") });
+            const detail = row.createDiv({ cls: "wb-wx-idx-detail" });
+            extra.indices.forEach(i => detail.createDiv({ cls: "wb-wx-idx-item", text: `${i.icon} ${i.name}：${i.text}` }));
+            head.addEventListener("click", () => {
+              const open = detail.style.display === "block";
+              detail.style.display = open ? "none" : "block";
+              arrow.textContent = open ? "▸" : "▾";
+            });
+          }
           if (extra.minutelySummary) ex.createDiv({ cls: "wb-wx-e", text: `🌧 ${extra.minutelySummary}` });
         }
       } else {

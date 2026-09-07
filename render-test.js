@@ -393,7 +393,7 @@ const app = {
     _exCalls.push(url);
     if (url.includes("/air/")) return { status: 200, json: { code: "200", now: { aqi: "35", category: "优", pm2p5: "22" } } };
     if (url.includes("/indices/")) return { status: 200, json: { code: "200", daily: [
-      { type: "1", name: "穿衣", text: "短袖" }, { type: "2", name: "紫外线", text: "强" }, { type: "3", name: "感冒", text: "少发" }, { type: "5", name: "运动", text: "较不宜" } ] } };
+      { type: "1", name: "运动", text: "较不宜" }, { type: "2", name: "洗车", text: "较不宜" }, { type: "3", name: "穿衣", text: "短袖" }, { type: "5", name: "紫外线", text: "强" } ] } };
     if (url.includes("/astronomy/")) return { status: 200, json: { code: "200", sunrise: "06:12", sunset: "18:24" } };
     if (url.includes("/minutely/")) return { status: 200, json: { code: "200", summary: "未来2小时无降水" } };
     return { status: 200, json: { code: "200", warning: [{ typeName: "暴雨", title: "橙色预警" }] } };
@@ -401,7 +401,8 @@ const app = {
   const _ex = await _T3.fetchQWeatherExtra({ longitude: 119.97, latitude: 31.77, qweatherKey: "TESTKEY", qweatherHost: "api.qweather.com" }, _mockEx);
   check("extra请求5个端点", _exCalls.length === 5, String(_exCalls.length));
   check("空气质量解析", _ex.air && _ex.air.aqi === "35" && _ex.air.category === "优", JSON.stringify(_ex.air));
-  check("生活指数4项", _ex.indices && _ex.indices.length === 4 && _ex.indices[0].name === "穿衣", JSON.stringify(_ex.indices && _ex.indices[0]));
+  check("生活指数4项", _ex.indices && _ex.indices.length === 4 && _ex.indices[0].name === "运动", JSON.stringify(_ex.indices && _ex.indices[0]));
+  check("指数icon映射", _ex.indices[0].icon === "🏃" && _ex.indices[1].icon === "🚿" && _ex.indices[2].icon === "👕" && _ex.indices[3].icon === "☀️", _ex.indices.map(i => i.icon).join(","));
   check("日出日落", _ex.sunrise === "06:12" && _ex.sunset === "18:24", _ex.sunrise + "/" + _ex.sunset);
   check("分钟降水摘要", _ex.minutelySummary && _ex.minutelySummary.includes("无降水"), _ex.minutelySummary);
   check("预警解析", _ex.warning && _ex.warning.includes("暴雨"), _ex.warning);
@@ -426,6 +427,26 @@ const app = {
   const _wxWarn = el.querySelector(".wb-wx-warn");
   check("预警标签显示", !!_wxWarn && _wxWarn.textContent.includes("橙色预警"), _wxWarn && _wxWarn.textContent);
   plugin.getWeatherExtra = _origEx;
+  await plugin.renderDashboard(el, null, state);
+
+  console.log("== 指数折叠 ==");
+  const _origEx2 = plugin.getWeatherExtra;
+  plugin.getWeatherExtra = async () => ({
+    indices: [{ icon: "🏃", name: "运动", text: "天气较好，适宜运动" }, { icon: "🚿", name: "洗车", text: "较不宜洗车" }, { icon: "👕", name: "穿衣", text: "建议穿T恤" }, { icon: "☀️", name: "紫外线", text: "中等强度" }]
+  });
+  await plugin.renderDashboard(el, null, state);
+  const _idxHd = el.querySelector(".wb-wx-idx-hd");
+  check("指数标题一行", !!_idxHd && textOf(_idxHd).includes("运动") && textOf(_idxHd).includes("洗车") && textOf(_idxHd).includes("穿衣"), _idxHd && textOf(_idxHd));
+  check("指数不显示详细文本", !textOf(_idxHd).includes("天气较好"), _idxHd && textOf(_idxHd));
+  const _idxDet = el.querySelector(".wb-wx-idx-detail");
+  check("详细默认收起", !!_idxDet && _idxDet.style.display !== "block", String(_idxDet && _idxDet.style.display));
+  _idxHd.fire("click");
+  check("点击展开", _idxDet.style.display === "block", String(_idxDet.style.display));
+  const _idxItems = el.querySelectorAll(".wb-wx-idx-item");
+  check("展开含详细文本", _idxItems.length === 4 && _idxItems[0].textContent.includes("天气较好"), String(_idxItems.length));
+  _idxHd.fire("click");
+  check("再点收起", _idxDet.style.display !== "block", String(_idxDet.style.display));
+  plugin.getWeatherExtra = _origEx2;
   await plugin.renderDashboard(el, null, state);
 
   console.log("== Open-Meteo 扩展 ==");
