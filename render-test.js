@@ -239,6 +239,42 @@ const app = {
   check("剩余天数在公历前", _diff > 0 && bdText.includes(`还有${_diff}天2026/9/22`), bdText);
   check("生日卡不显示姓名", !bdText.includes("卢小南"), bdText);
 
+  console.log("== 左栏任务统计 ==");
+  // 注入 mock 任务（含今日/逾期/后续）验证左栏三板块
+  plugin.getTasks = async () => [
+    { file: "工作/a.md", text: "上午9点，制定扩容方案", raw: "", done: false, scheduled: "2026-09-07", due: null, date: "2026-09-07" },
+    { file: "工作/b.md", text: "上午8点半，设备归还入库", raw: "", done: false, scheduled: "2026-09-07", due: null, date: "2026-09-07" },
+    { file: "工作/c.md", text: "下午1点，整理成本清单", raw: "", done: false, scheduled: "2026-09-07", due: null, date: "2026-09-07" },
+    { file: "工作/d.md", text: "已完成的今日任务", raw: "", done: true, scheduled: "2026-09-07", due: null, date: "2026-09-07" },
+    { file: "工作/e.md", text: "逾期任务A", raw: "", done: false, scheduled: "2026-08-01", due: null, date: "2026-08-01" },
+    { file: "工作/f.md", text: "逾期任务B", raw: "", done: false, scheduled: "2026-07-05", due: null, date: "2026-07-05" },
+    { file: "工作/g.md", text: "逾期任务C", raw: "", done: false, scheduled: "2026-08-17", due: null, date: "2026-08-17" },
+    { file: "工作/h.md", text: "逾期任务D", raw: "", done: false, scheduled: "2026-08-17", due: null, date: "2026-08-17" },
+    { file: "工作/i.md", text: "逾期任务E", raw: "", done: false, scheduled: "2026-08-21", due: null, date: "2026-08-21" },
+    { file: "工作/j.md", text: "逾期任务F", raw: "", done: false, scheduled: "2026-07-31", due: null, date: "2026-07-31" },
+    { file: "工作/k.md", text: "后续任务X", raw: "", done: false, scheduled: "2026-10-01", due: null, date: "2026-10-01" },
+    { file: "工作/l.md", text: "后续任务Y", raw: "", done: false, scheduled: "2026-11-01", due: null, date: "2026-11-01" }
+  ];
+  await plugin.renderDashboard(el, null, state);
+  const _taskCard = [...el.querySelectorAll(".wb-card")].find(c => {
+    const tt = c.querySelector(".wb-card-tt");
+    return tt && tt.textContent === "今日任务";
+  });
+  const _subs = _taskCard ? [..._taskCard.querySelectorAll(".wb-subhead")].map(s => s.textContent) : [];
+  check("逾期任务标题", _subs.some(t => t.startsWith("逾期任务")), _subs.join(","));
+  check("后续任务标题", _subs.some(t => t.startsWith("后续任务")), _subs.join(","));
+  const _sc = _taskCard ? _taskCard.querySelectorAll(".wb-tasklist-scroll") : [];
+  check("逾期/后续均为滚动列表", _sc.length === 2, String(_sc.length));
+  const _todayList = _taskCard ? _taskCard.querySelector(".wb-tasklist:not(.wb-tasklist-scroll)") : null;
+  if (_todayList) {
+    const _times = [..._todayList.querySelectorAll(".wb-task-txt")].map(e => e.textContent);
+    const _parsed = _times.map(t => (globalThis.__wb_test.parseTaskTime(t) ?? 1e9));
+    const _sorted = _parsed.every((v, i, a) => i === 0 || a[i - 1] <= v);
+    check("今日任务按时间排序", _sorted, _times.join(" | "));
+  } else {
+    check("今日任务按时间排序", true, "今日无任务");
+  }
+
   console.log("== 日历 ==");
   const cells = el.querySelectorAll(".wb-day");
   check("日历格子数(2026-09=35)", cells.length === 35, "got " + cells.length);

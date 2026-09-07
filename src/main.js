@@ -783,23 +783,31 @@ class WorkbenchPlugin extends Plugin {
       row.createSpan({ text: `剩余 ${daysInYear(now.getFullYear()) - dayOfYear(now)} 天` });
     }
 
-    /* 今日任务 + 逾期待办 */
+    /* 今日任务 + 逾期任务 + 后续任务 */
     if (this.settings.todayTasksEnabled) {
+      const sortByTime = (a, b) => (parseTaskTime(a.text) ?? 1e9) - (parseTaskTime(b.text) ?? 1e9);
       const card = left.createDiv({ cls: "wb-card" });
       card.createDiv({ cls: "wb-card-hd" }).createDiv({ cls: "wb-card-tt", text: "今日任务" });
-      const todayTasks = (tasksByDate[today] || []).filter(t => !t.done);
+      const todayTasks = (tasksByDate[today] || []).filter(t => !t.done).sort(sortByTime);
       const tl = card.createDiv({ cls: "wb-tasklist" });
       if (!todayTasks.length) {
         tl.createDiv({ cls: "wb-empty", text: "今天没有安排任务 ✨" });
       } else {
         todayTasks.slice(0, 5).forEach(t => tl.appendChild(this.renderTaskItem(this, t, now)));
       }
-      const overdue = activeTasks.filter(t => t.date < today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
+      const overdue = activeTasks.filter(t => t.date < today).sort((a, b) => a.date.localeCompare(b.date));
       if (overdue.length) {
         const sep = card.createDiv({ cls: "wb-divider" });
-        const sh = card.createDiv({ cls: "wb-subhead", text: "逾期待办" });
-        const tl2 = card.createDiv({ cls: "wb-tasklist" });
+        const sh = card.createDiv({ cls: "wb-subhead", text: `逾期任务（${overdue.length}）` });
+        const tl2 = card.createDiv({ cls: "wb-tasklist wb-tasklist-scroll" });
         overdue.forEach(t => tl2.appendChild(this.renderTaskItem(this, t, now, true)));
+      }
+      const later = activeTasks.filter(t => t.date > today).sort((a, b) => a.date.localeCompare(b.date));
+      if (later.length) {
+        const sep2 = card.createDiv({ cls: "wb-divider" });
+        const sh2 = card.createDiv({ cls: "wb-subhead", text: `后续任务（${later.length}）` });
+        const tl3 = card.createDiv({ cls: "wb-tasklist wb-tasklist-scroll" });
+        later.forEach(t => tl3.appendChild(this.renderTaskItem(this, t, now)));
       }
     }
 
