@@ -386,6 +386,66 @@ const app = {
   check("无key回退Open-Meteo", _omCalls[0].startsWith("https://api.open-meteo.com"), _omCalls[0]);
   check("Open-Meteo温度正常", _om.temp === 30, String(_om.temp));
 
+  console.log("== 扩展天气 ==");
+  const _T3 = globalThis.__wb_test;
+  const _exCalls = [];
+  const _mockEx = async ({ url }) => {
+    _exCalls.push(url);
+    if (url.includes("/air/")) return { status: 200, json: { code: "200", now: { aqi: "35", category: "优", pm2p5: "22" } } };
+    if (url.includes("/indices/")) return { status: 200, json: { code: "200", daily: [
+      { type: "1", name: "穿衣", text: "短袖" }, { type: "2", name: "紫外线", text: "强" }, { type: "3", name: "感冒", text: "少发" }, { type: "5", name: "运动", text: "较不宜" } ] } };
+    if (url.includes("/astronomy/")) return { status: 200, json: { code: "200", sunrise: "06:12", sunset: "18:24" } };
+    if (url.includes("/minutely/")) return { status: 200, json: { code: "200", summary: "未来2小时无降水" } };
+    return { status: 200, json: { code: "200", warning: [{ typeName: "暴雨", title: "橙色预警" }] } };
+  };
+  const _ex = await _T3.fetchQWeatherExtra({ longitude: 119.97, latitude: 31.77, qweatherKey: "TESTKEY", qweatherHost: "api.qweather.com" }, _mockEx);
+  check("extra请求5个端点", _exCalls.length === 5, String(_exCalls.length));
+  check("空气质量解析", _ex.air && _ex.air.aqi === "35" && _ex.air.category === "优", JSON.stringify(_ex.air));
+  check("生活指数4项", _ex.indices && _ex.indices.length === 4 && _ex.indices[0].name === "穿衣", JSON.stringify(_ex.indices && _ex.indices[0]));
+  check("日出日落", _ex.sunrise === "06:12" && _ex.sunset === "18:24", _ex.sunrise + "/" + _ex.sunset);
+  check("分钟降水摘要", _ex.minutelySummary && _ex.minutelySummary.includes("无降水"), _ex.minutelySummary);
+  check("预警解析", _ex.warning && _ex.warning.includes("暴雨"), _ex.warning);
+
+  console.log("== 扩展天气渲染 ==");
+  const _origEx = plugin.getWeatherExtra;
+  plugin.getWeatherExtra = async () => ({
+    air: { aqi: "35", category: "优", pm2p5: "22" },
+    indices: [{ icon: "👕", name: "穿衣", text: "短袖" }, { icon: "☀️", name: "紫外线", text: "强" }],
+    sunrise: "06:12", sunset: "18:24",
+    minutelySummary: "未来2小时无降水",
+    warning: "暴雨 橙色预警"
+  });
+  await plugin.renderDashboard(el, null, state);
+  const _wxExtra = el.querySelector(".wb-wx-extra");
+  check("扩展区渲染", !!_wxExtra, "none");
+  const _exText = _wxExtra ? textOf(_wxExtra) : "";
+  check("日出日落显示", _exText.includes("06:12") && _exText.includes("18:24"), _exText);
+  check("空气质量显示", _exText.includes("优") && _exText.includes("35"), _exText);
+  check("生活指数显示", _exText.includes("穿衣") && _exText.includes("紫外线"), _exText);
+  check("分钟降水显示", _exText.includes("无降水"), _exText);
+  const _wxWarn = el.querySelector(".wb-wx-warn");
+  check("预警标签显示", !!_wxWarn && _wxWarn.textContent.includes("橙色预警"), _wxWarn && _wxWarn.textContent);
+  plugin.getWeatherExtra = _origEx;
+  await plugin.renderDashboard(el, null, state);
+
+  console.log("== 缓存持久化/恢复 ==");
+  const _saved = [];
+  const _origSave = plugin.saveSettings.bind(plugin);
+  plugin.saveSettings = async () => { _saved.push(plugin.settings._wc ? "wc" : null, plugin.settings._ec ? "ec" : null); };
+  const _mockCacheReq = async ({ url }) => url.includes("/now")
+    ? { status: 200, json: { code: "200", now: { temp: "28", feelsLike: "31", humidity: "77", windSpeed: "18", icon: "104", text: "阴" } } }
+    : { status: 200, json: { code: "200", daily: [{ fxDate: "2026-09-07", iconDay: "101", textDay: "多云", tempMax: "29", tempMin: "24" }] } };
+  plugin.getWeather = async () => { const d = await _T3.fetchWeather({ latitude: 31.77, longitude: 119.97, qweatherKey: "", qweatherHost: "x" }, _mockCacheReq); return d; };
+  // 重新 new 一个实例验证持久化恢复（缓存未过期不请求）
+  const plugin2 = new WB(app, {});
+  plugin2.settings = Object.assign({}, plugin.settings, { _wc: { data: { temp: 28 }, time: Date.now() }, _ec: { data: { sunrise: "06:12" }, time: Date.now() } });
+  plugin2.weatherCache = { data: null, stale: true };
+  plugin2.extraCache = { data: null, stale: true };
+  plugin2._restoreWeatherCaches();
+  check("恢复天气缓存", plugin2.weatherCache.data && plugin2.weatherCache.data.temp === 28, JSON.stringify(plugin2.weatherCache.data));
+  check("恢复扩展缓存", plugin2.extraCache.data && plugin2.extraCache.data.sunrise === "06:12", JSON.stringify(plugin2.extraCache.data));
+  plugin.saveSettings = _origSave;
+
   console.log("\n通过 " + pass + " / " + (pass + fail));
   process.exit(fail ? 1 : 0);
 })();

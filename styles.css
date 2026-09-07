@@ -145,6 +145,9 @@
 .wb-wx-unit { font-size: 16px; color: var(--wb-muted); font-weight: 400; }
 .wb-wx-meta { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--wb-muted); }
 .wb-wx-cond { font-size: 13px; color: var(--wb-text); font-weight: 500; }
+.wb-wx-extra { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--wb-line); }
+.wb-wx-e { font-size: 10.5px; color: #b9bfd2; line-height: 1.5; }
+.wb-wx-warn { margin-top: 8px; font-size: 11px; color: var(--wb-warn); background: color-mix(in srgb, var(--wb-warn) 14%, transparent); border-radius: 6px; padding: 3px 8px; }
 .wb-wx-empty { font-size: 12px; color: var(--wb-muted); padding: 8px 0; }
 .wb-wx-forecast { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 12px; }
 .wb-wx-f { text-align: center; font-size: 10px; color: var(--wb-muted); }

@@ -69,6 +69,7 @@ const DEFAULT_SETTINGS = {
   refreshMinutes: 30,
   qweatherKey: "",
   qweatherHost: "api.qweather.com",
+  extraRefreshMinutes: 120,
   openOnStartup: true,
   bannerEnabled: true,
   queryEnabled: true,
@@ -469,6 +470,39 @@ async function fetchQWeather(settings, _req) {
     }))
   };
 }
+/* 和风扩展天气（空气质量/生活指数/日出日落/分钟降水/预警）· 低频刷新控制请求数 */
+async function fetchQWeatherExtra(settings, _req) {
+  const req = _req || requestUrl;
+  const host = settings.qweatherHost || "api.qweather.com";
+  const loc = `${settings.longitude},${settings.latitude}`;
+  const key = String(settings.qweatherKey).trim();
+  const base = `https://${host}/v7/`;
+  const out = {};
+  const [airR, idxR, astR, minR, warnR] = await Promise.allSettled([
+    req({ url: `${base}air/now?location=${loc}&key=${key}` }),
+    req({ url: `${base}indices/1d?location=${loc}&key=${key}&type=1,2,3,5` }),
+    req({ url: `${base}astronomy/now?location=${loc}&key=${key}` }),
+    req({ url: `${base}minutely/5m?location=${loc}&key=${key}` }),
+    req({ url: `${base}warning/now?location=${loc}&key=${key}` })
+  ]);
+  const j = (r) => r.status === "fulfilled" && r.value && r.value.json ? r.value.json : null;
+  const air = j(airR);
+  if (air && air.now) out.air = { aqi: air.now.aqi, category: air.now.category, pm2p5: air.now.pm2p5 };
+  const idx = j(idxR);
+  if (idx && idx.daily && idx.daily.length) {
+    const icons = { 1: "👕", 2: "☀️", 3: "🤧", 5: "🏃" };
+    out.indices = idx.daily.slice(0, 4).map(d => ({ icon: icons[d.type] || "·", name: d.name, text: d.text }));
+  }
+  const ast = j(astR);
+  if (ast && ast.sunrise) { out.sunrise = ast.sunrise; out.sunset = ast.sunset; }
+  const min = j(minR);
+  if (min && min.summary) out.minutelySummary = min.summary;
+  const warn = j(warnR);
+  if (warn && warn.warning && warn.warning.length) {
+    out.warning = warn.warning.map(w => `${w.typeName || ""} ${w.title}`).filter(Boolean).slice(0, 2).join("；");
+  }
+  return out;
+}
 /* ---------------- 主插件 ---------------- */
 class WorkbenchPlugin extends Plugin {
   async onload() {
@@ -485,6 +519,8 @@ class WorkbenchPlugin extends Plugin {
     this.tasksCache = { data: null, stale: true, scanning: false };
     this.birthdayCache = { data: null, stale: true };
     this.weatherCache = { data: null, stale: true };
+    this.extraCache = { data: null, stale: true };
+    this._restoreWeatherCaches();
 
     // 独立视图（个人工作台页签）
     this.registerView(VIEW_TYPE_WORKBENCH, (leaf) => new WorkbenchView(leaf, this));
@@ -524,6 +560,19 @@ class WorkbenchPlugin extends Plugin {
     this.addSettingTab(new WorkbenchSettingTab(this.app, this));
   }
 
+  /* 恢复持久化的天气缓存（重启不重复请求）*/
+  _restoreWeatherCaches() {
+    const s = this.settings;
+    if (s._wc && s._wc.data && Date.now() - (s._wc.time || 0) < (s.refreshMinutes || 30) * 60000) {
+      this.weatherCache.data = s._wc.data;
+      this.weatherCache.time = s._wc.time;
+    }
+    if (s._ec && s._ec.data && Date.now() - (s._ec.time || 0) < (s.extraRefreshMinutes || 120) * 60000) {
+      this.extraCache.data = s._ec.data;
+      this.extraCache.time = s._ec.time;
+    }
+  }
+
   onunload() {}
 
   async loadSettings() {
@@ -558,6 +607,24 @@ class WorkbenchPlugin extends Plugin {
     return c.data || [];
   }
 
+  async getWeatherExtra(force) {
+    if (!this.settings.qweatherKey || !String(this.settings.qweatherKey).trim()) return null;
+    const c = this.extraCache;
+    const maxAge = (this.settings.extraRefreshMinutes || 120) * 60000;
+    if (c.data && !c.stale && Date.now() - (c.time || 0) < maxAge && !force) return c.data;
+    try {
+      c.data = await fetchQWeatherExtra(this.settings);
+      c.time = Date.now();
+      c.stale = false;
+      this.settings._ec = { data: c.data, time: c.time };
+      await this.saveSettings();
+    } catch (e) {
+      console.warn("workbench extra failed", e);
+      c.stale = false;
+    }
+    return c.data || null;
+  }
+
   async getBirthdays(force) {
     const c = this.birthdayCache;
     if (c.data && !c.stale && !force) return c.data;
@@ -575,6 +642,8 @@ class WorkbenchPlugin extends Plugin {
       c.data = await fetchWeather(this.settings);
       c.time = Date.now();
       c.stale = false;
+      this.settings._wc = { data: c.data, time: c.time };
+      await this.saveSettings();
     } catch (e) {
       console.warn("workbench weather failed", e);
       c.data = { error: e && e.message ? String(e.message) : "天气获取失败" };
@@ -673,10 +742,11 @@ class WorkbenchPlugin extends Plugin {
     el.empty();
     const root = el.createDiv({ cls: "wb-dashboard" });
 
-    const [tasks, birthdays, weather] = await Promise.all([
+    const [tasks, birthdays, weather, extra] = await Promise.all([
       this.getTasks(),
       this.getBirthdays(),
-      this.getWeather()
+      this.getWeather(),
+      this.getWeatherExtra()
     ]);
 
     // 任务按日期索引（日历徽标/左栏今日任务只统计未完成任务；当天详情右侧显示全部含已完成）
@@ -804,6 +874,15 @@ class WorkbenchPlugin extends Plugin {
           f.createEl("b", { text: `${item.max}°` });
           f.createSpan({ cls: "wb-wx-flow", text: `${item.min}°` });
         });
+        // 扩展天气（和风：空气质量/生活指数/日出日落/分钟降水/预警）
+        if (extra && (extra.sunrise || extra.air || (extra.indices && extra.indices.length) || extra.minutelySummary || extra.warning)) {
+          if (extra.warning) card.createDiv({ cls: "wb-wx-warn", text: `⚠️ ${extra.warning}` });
+          const ex = card.createDiv({ cls: "wb-wx-extra" });
+          if (extra.sunrise) ex.createDiv({ cls: "wb-wx-e", text: `🌅 ${extra.sunrise} · 🌇 ${extra.sunset}` });
+          if (extra.air && extra.air.aqi != null) ex.createDiv({ cls: "wb-wx-e", text: `空气质量 ${extra.air.category} · AQI ${extra.air.aqi} · PM2.5 ${extra.air.pm2p5}` });
+          if (extra.indices && extra.indices.length) ex.createDiv({ cls: "wb-wx-e", text: extra.indices.map(i => `${i.icon} ${i.name} ${i.text}`).join(" · ") });
+          if (extra.minutelySummary) ex.createDiv({ cls: "wb-wx-e", text: `🌧 ${extra.minutelySummary}` });
+        }
       } else {
         card.createDiv({ cls: "wb-wx-empty", text: "天气获取失败，请检查网络或设置中的城市/经纬度" });
       }
@@ -1327,7 +1406,7 @@ class WorkbenchSettingTab extends PluginSettingTab {
 
 /* 测试钩子（仅用于构建期自测） */
 if (typeof globalThis !== "undefined") {
-  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, parseTaskTime, isoWeek, weekendRest, yearWeekends, lunarLib, fetchWeather, fetchQWeather, QW_ICONS };
+  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, parseTaskTime, isoWeek, weekendRest, yearWeekends, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, QW_ICONS };
 }
 
 module.exports = WorkbenchPlugin;
