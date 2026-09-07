@@ -530,11 +530,13 @@ class WorkbenchPlugin extends Plugin {
       this.getWeather()
     ]);
 
-    // 任务按日期索引（只统计未完成任务；已完成仅用于计数）
+    // 任务按日期索引（日历徽标/左栏今日任务只统计未完成任务；当天详情右侧显示全部含已完成）
     const activeTasks = tasks.filter(t => !t.done);
     const tasksByDate = {};
-    for (const t of activeTasks) {
-      (tasksByDate[t.date] = tasksByDate[t.date] || []).push(t);
+    const allTasksByDate = {};
+    for (const t of tasks) {
+      (allTasksByDate[t.date] = allTasksByDate[t.date] || []).push(t);
+      if (!t.done) (tasksByDate[t.date] = tasksByDate[t.date] || []).push(t);
     }
     const doneCount = tasks.filter(t => t.done).length;
 
@@ -734,7 +736,7 @@ class WorkbenchPlugin extends Plugin {
     /* ===== 日历 ===== */
     if (this.settings.calendarEnabled) {
       const calCard = grid.createDiv({ cls: "wb-card wb-calcard" });
-      this.renderCalendar(calCard, state, tasksByDate, birthdayEvents);
+      this.renderCalendar(calCard, state, tasksByDate, birthdayEvents, allTasksByDate);
     }
 
     el.setAttribute("data-wb-rendered", "1");
@@ -831,7 +833,7 @@ class WorkbenchPlugin extends Plugin {
   }
 
   /* 日历 + 黄历详情 */
-  renderCalendar(card, state, tasksByDate, birthdayEvents) {
+  renderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate) {
     // 头部
     const head = card.createDiv({ cls: "wb-cal-head" });
     const t1 = lunarLib.Solar.fromYmd(state.year, state.month, 1).getLunar();
@@ -841,7 +843,7 @@ class WorkbenchPlugin extends Plugin {
     const nav = head.createDiv({ cls: "wb-cal-nav" });
     const mkBtn = (txt, fn) => {
       const b = nav.createEl("button", { text: txt });
-      b.addEventListener("click", () => { fn(); this.rerenderCalendar(card, state, tasksByDate, birthdayEvents); });
+      b.addEventListener("click", () => { fn(); this.rerenderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate); });
       return b;
     };
     mkBtn("‹", () => { state.month--; if (state.month < 1) { state.month = 12; state.year--; } });
@@ -924,20 +926,20 @@ class WorkbenchPlugin extends Plugin {
 
       cell.addEventListener("click", () => {
         state.selected = key;
-        this.renderDayDetail(card, state, tasksByDate, birthdayByKey, key);
+        this.renderDayDetail(card, state, tasksByDate, birthdayByKey, key, allTasksByDate);
         card.querySelectorAll(".wb-day").forEach(el2 => el2.toggleClass("wb-sel", el2 === cell));
       });
     }
 
-    this.renderDayDetail(card, state, tasksByDate, birthdayByKey, state.selected);
+    this.renderDayDetail(card, state, tasksByDate, birthdayByKey, state.selected, allTasksByDate);
   }
 
-  rerenderCalendar(card, state, tasksByDate, birthdayEvents) {
+  rerenderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate) {
     card.empty();
-    this.renderCalendar(card, state, tasksByDate, birthdayEvents);
+    this.renderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate);
   }
 
-  renderDayDetail(card, state, tasksByDate, birthdayByKey, key) {
+  renderDayDetail(card, state, tasksByDate, birthdayByKey, key, allTasksByDate) {
     const old = card.querySelector(".wb-daydetail");
     if (old) old.remove();
     const [y, m, d] = key.split("-").map(Number);
@@ -967,8 +969,8 @@ class WorkbenchPlugin extends Plugin {
     yiji.createDiv({ cls: "wb-ji", text: "忌：" + (ji.slice(0, 8).join(" ") || "—") });
 
     const right = detail.createDiv({ cls: "wb-dd-right" });
-    const tasks = tasksByDate[key] || [];
-    const overdueN = tasks.filter(t => t.date < todayStr()).length;
+    const tasks = allTasksByDate[key] || [];
+    const overdueN = tasks.filter(t => !t.done && t.date < todayStr()).length;
     right.createDiv({ cls: "wb-dd-tt", text: tasks.length ? `当天任务（${overdueN} 项逾期）` : "当天没有任务安排" });
     if (tasks.length) {
       const tl = right.createDiv({ cls: "wb-tasklist" });
