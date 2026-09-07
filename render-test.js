@@ -428,6 +428,36 @@ const app = {
   plugin.getWeatherExtra = _origEx;
   await plugin.renderDashboard(el, null, state);
 
+  console.log("== Open-Meteo 扩展 ==");
+  const _T4 = globalThis.__wb_test;
+  const _omCalls2 = [];
+  const _mockOM = async ({ url }) => {
+    _omCalls2.push(url);
+    if (url.includes("air-quality-api")) return { status: 200, json: { current: { pm2_5: 22.4, pm10: 40, us_aqi: 35, us_aqi_category: "Good" } } };
+    return { status: 200, json: { daily: { sunrise: ["2026-09-07T05:58"], sunset: ["2026-09-07T18:14"] } } };
+  };
+  const _ome = await _T4.fetchOpenMeteoExtra({ latitude: 31.77, longitude: 119.97 }, _mockOM);
+  check("OpenMeteo请求2端点", _omCalls2.length === 2, String(_omCalls2.length));
+  check("日出日落解析", _ome.sunrise === "05:58" && _ome.sunset === "18:14", _ome.sunrise + "/" + _ome.sunset);
+  check("空气质量解析", _ome.air && _ome.air.aqi === "35" && _ome.air.pm2p5 === "22", JSON.stringify(_ome.air));
+  // 无 key 时 getWeatherExtra 走 Open-Meteo（不走和风）
+  const _origExtraFetch = plugin.getWeatherExtra.bind(plugin);
+  const _probe = { fetched: null };
+  plugin.getWeatherExtra = async function (force) {
+    const d = this.settings.qweatherKey && String(this.settings.qweatherKey).trim()
+      ? await _T4.fetchQWeatherExtra(this.settings, _mockEx)
+      : await _T4.fetchOpenMeteoExtra(this.settings, _mockOM);
+    _probe.fetched = d;
+    return d;
+  };
+  plugin.settings.qweatherKey = "";
+  await plugin.getWeatherExtra(true);
+  check("无key走OpenMeteo扩展", !!_probe.fetched && !!_probe.fetched.air, JSON.stringify(_probe.fetched));
+  plugin.settings.qweatherKey = "TESTKEY";
+  await plugin.getWeatherExtra(true);
+  check("有key走和风扩展", !!_probe.fetched && !!_probe.fetched.indices, JSON.stringify(_probe.fetched && Object.keys(_probe.fetched)));
+  plugin.getWeatherExtra = _origExtraFetch;
+
   console.log("== 缓存持久化/恢复 ==");
   const _saved = [];
   const _origSave = plugin.saveSettings.bind(plugin);

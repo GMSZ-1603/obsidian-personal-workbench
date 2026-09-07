@@ -66,10 +66,10 @@ const DEFAULT_SETTINGS = {
   longitude: 119.97,
   birthdayFile: "生活/生日日期.md",
   excludeFolders: ["图片", "Templates", "OneNote", "smart-note-agent", ".smartnotes", "微信公众号文章", "统计"],
-  refreshMinutes: 30,
+  refreshMinutes: 10,
   qweatherKey: "",
   qweatherHost: "api.qweather.com",
-  extraRefreshMinutes: 120,
+  extraRefreshMinutes: 30,
   openOnStartup: true,
   bannerEnabled: true,
   queryEnabled: true,
@@ -503,6 +503,30 @@ async function fetchQWeatherExtra(settings, _req) {
   }
   return out;
 }
+/* Open-Meteo 扩展天气（空气质量/日出日落）· 无 key 模式 */
+async function fetchOpenMeteoExtra(settings, _req) {
+  const req = _req || requestUrl;
+  const lat = settings.latitude;
+  const lon = settings.longitude;
+  const out = {};
+  const [fR, aR] = await Promise.allSettled([
+    req({ url: `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=sunrise,sunset&timezone=auto&forecast_days=1` }),
+    req({ url: `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,us_aqi,us_aqi_category` })
+  ]);
+  const j = (r) => r.status === "fulfilled" && r.value && r.value.json ? r.value.json : null;
+  const f = j(fR);
+  if (f && f.daily && f.daily.sunrise && f.daily.sunrise[0]) {
+    out.sunrise = f.daily.sunrise[0].slice(11, 16);
+    out.sunset = f.daily.sunset[0].slice(11, 16);
+  }
+  const a = j(aR);
+  if (a && a.current && a.current.us_aqi != null) {
+    const u = a.current.us_aqi;
+    const cat = a.current.us_aqi_category || (u <= 50 ? "优" : u <= 100 ? "良" : u <= 150 ? "轻度污染" : "中度污染");
+    out.air = { aqi: String(u), category: cat, pm2p5: a.current.pm2_5 != null ? String(Math.round(a.current.pm2_5)) : null };
+  }
+  return out;
+}
 /* ---------------- 主插件 ---------------- */
 class WorkbenchPlugin extends Plugin {
   async onload() {
@@ -567,7 +591,7 @@ class WorkbenchPlugin extends Plugin {
       this.weatherCache.data = s._wc.data;
       this.weatherCache.time = s._wc.time;
     }
-    if (s._ec && s._ec.data && Date.now() - (s._ec.time || 0) < (s.extraRefreshMinutes || 120) * 60000) {
+    if (s._ec && s._ec.data && Object.keys(s._ec.data).length && Date.now() - (s._ec.time || 0) < (s.extraRefreshMinutes || 30) * 60000) {
       this.extraCache.data = s._ec.data;
       this.extraCache.time = s._ec.time;
     }
@@ -608,23 +632,29 @@ class WorkbenchPlugin extends Plugin {
   }
 
   async getWeatherExtra(force) {
-    if (!this.settings.qweatherKey || !String(this.settings.qweatherKey).trim()) return null;
+    if (!this.extraCache) this.extraCache = { data: null, stale: true };
     const c = this.extraCache;
-    const maxAge = (this.settings.extraRefreshMinutes || 120) * 60000;
+    const maxAge = (this.settings.extraRefreshMinutes || 30) * 60000;
     if (c.data && !c.stale && Date.now() - (c.time || 0) < maxAge && !force) return c.data;
     try {
-      c.data = await fetchQWeatherExtra(this.settings);
-      c.time = Date.now();
-      c.stale = false;
-      this.settings._ec = { data: c.data, time: c.time };
-      await this.saveSettings();
+      const d = this.settings.qweatherKey && String(this.settings.qweatherKey).trim()
+        ? await fetchQWeatherExtra(this.settings)
+        : await fetchOpenMeteoExtra(this.settings);
+      if (d && Object.keys(d).length) {
+        c.data = d;
+        c.time = Date.now();
+        c.stale = false;
+        this.settings._ec = { data: d, time: c.time };
+        await this.saveSettings();
+      } else {
+        c.stale = true;
+      }
     } catch (e) {
       console.warn("workbench extra failed", e);
-      c.stale = false;
+      c.stale = true;
     }
     return c.data || null;
   }
-
   async getBirthdays(force) {
     const c = this.birthdayCache;
     if (c.data && !c.stale && !force) return c.data;
@@ -1341,8 +1371,11 @@ class WorkbenchSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       }));
 
-    new Setting(containerEl).setName("数据刷新间隔（分钟）").setDesc("天气等数据的刷新间隔")
+    new Setting(containerEl).setName("数据刷新间隔（分钟）").setDesc("主天气（实时+7天预报）的刷新间隔，默认 10 分钟")
       .addSlider(s => s.setLimits(5, 180, 5).setValue(this.plugin.settings.refreshMinutes).setDynamicTooltip().onChange(async v => { this.plugin.settings.refreshMinutes = v; await this.plugin.saveSettings(); }));
+
+    new Setting(containerEl).setName("扩展天气刷新间隔（分钟）").setDesc("空气质量/指数/日出日落等数据的刷新间隔，默认 30 分钟；主 10 分钟 + 扩展 30 分钟，和风模式约 528 次/天（免费版 1000 次）")
+      .addSlider(s => s.setLimits(10, 360, 10).setValue(this.plugin.settings.extraRefreshMinutes).setDynamicTooltip().onChange(async v => { this.plugin.settings.extraRefreshMinutes = v; this.plugin.extraCache.stale = true; await this.plugin.saveSettings(); }));
 
     new Setting(containerEl).setName("启动时自动打开工作台").setDesc("打开 Obsidian 时自动打开「个人工作台」视图页签")
       .addToggle(t => t.setValue(this.plugin.settings.openOnStartup).onChange(async v => { this.plugin.settings.openOnStartup = v; await this.plugin.saveSettings(); }));
@@ -1406,7 +1439,7 @@ class WorkbenchSettingTab extends PluginSettingTab {
 
 /* 测试钩子（仅用于构建期自测） */
 if (typeof globalThis !== "undefined") {
-  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, parseTaskTime, isoWeek, weekendRest, yearWeekends, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, QW_ICONS };
+  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, parseTaskTime, isoWeek, weekendRest, yearWeekends, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, fetchOpenMeteoExtra, QW_ICONS };
 }
 
 module.exports = WorkbenchPlugin;
