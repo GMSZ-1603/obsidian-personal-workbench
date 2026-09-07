@@ -53,6 +53,20 @@ function h(tag, cls, text) {
   return e;
 }
 
+/* 解析任务文本中的时间描述（如 上午9点 / 下午1点半 / 14:00）→ 当日分钟数；无法解析返回 null */
+function parseTaskTime(text) {
+  if (!text) return null;
+  let m = text.match(/(\d{1,2}):(\d{1,2})/);
+  if (m) return (+m[1]) * 60 + (+m[2]);
+  m = text.match(/(凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|夜里|半夜)?\s*(\d{1,2})\s*[点时]\s*(\d{1,2})?\s*分?\s*(半)?/);
+  if (!m) return null;
+  let h = +m[2];
+  const min = m[3] ? +m[3] : (m[4] ? 30 : 0);
+  const p = m[1] || '';
+  if ((p === '下午' || p === '傍晚' || p === '晚上' || p === '夜里' || p === '半夜') && h < 12) h += 12;
+  if (p === '中午' && h < 11) h += 12;
+  return h * 60 + min;
+}
 /* 农历中文日 -> 数字（初一..三十） */
 function parseCnDay(s) {
   if (!s) return null;
@@ -969,7 +983,11 @@ class WorkbenchPlugin extends Plugin {
     yiji.createDiv({ cls: "wb-ji", text: "忌：" + (ji.slice(0, 8).join(" ") || "—") });
 
     const right = detail.createDiv({ cls: "wb-dd-right" });
-    const tasks = allTasksByDate[key] || [];
+    const tasks = [...(allTasksByDate[key] || [])].sort((a, b) => {
+      const ta = parseTaskTime(a.text);
+      const tb = parseTaskTime(b.text);
+      return (ta == null ? 1e9 : ta) - (tb == null ? 1e9 : tb);
+    });
     const overdueN = tasks.filter(t => !t.done && t.date < todayStr()).length;
     right.createDiv({ cls: "wb-dd-tt", text: tasks.length ? `当天任务（${overdueN} 项逾期）` : "当天没有任务安排" });
     if (tasks.length) {
@@ -1061,7 +1079,7 @@ class WorkbenchSettingTab extends PluginSettingTab {
 
 /* 测试钩子（仅用于构建期自测） */
 if (typeof globalThis !== "undefined") {
-  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, lunarLib };
+  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, parseTaskTime, lunarLib };
 }
 
 module.exports = WorkbenchPlugin;
