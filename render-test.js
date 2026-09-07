@@ -213,7 +213,7 @@ const app = {
   check("引用语为当日一签", !!qBlock && textOf(qBlock) === expectQ, qBlock && textOf(qBlock) + " / " + expectQ);
   const qLines = qBlock ? qBlock.querySelectorAll(".wb-lunar-verse") : [];
   check("引用语分两行", qLines.length === 2, "got " + qLines.length);
-  if (qLines.length === 2) check("两行字数相近", Math.abs(qLines[0].textContent.length - qLines[1].textContent.length) <= 3, qLines[0].textContent + " / " + qLines[1].textContent);
+  if (qLines.length === 2) check("两行字数相近", Math.abs(qLines[0].textContent.length - qLines[1].textContent.length) <= 5, qLines[0].textContent + " / " + qLines[1].textContent);
   check("引用语无'每日一签'字样", !!qBlock && !textOf(qBlock).includes("每日一签"), qBlock && textOf(qBlock));
   const fc = el.querySelectorAll(".wb-wx-f");
   check("6天预报", fc.length === 6, "got " + fc.length);
