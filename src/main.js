@@ -719,13 +719,14 @@ class WorkbenchPlugin extends Plugin {
     for (const file of files) {
       total++;
       const ct = file.stat.ctime;
+      const mt = file.stat.mtime;
       if (ct >= monthStart) newMonth++;
       if (ct >= weekStart) newWeek++;
-      if (ct >= heatStart) {
-        const Q = Math.floor((dayStart - new Date(new Date(ct).getFullYear(), new Date(ct).getMonth(), new Date(ct).getDate()).getTime()) / 86400000);
+      if (mt >= heatStart) {
+        const Q = Math.floor((dayStart - new Date(new Date(mt).getFullYear(), new Date(mt).getMonth(), new Date(mt).getDate()).getTime()) / 86400000);
         if (Q >= 0 && Q < US) activity[US - 1 - Q]++;
       }
-      activeDates.add(ymdOf(ct));
+      activeDates.add(ymdOf(mt));
       if (!hasOut.has(file.path) && !isTarget.has(file.path)) orphan++;
       const cache = this.app.metadataCache.getFileCache(file);
       if (!cache) continue;
@@ -841,9 +842,13 @@ class WorkbenchPlugin extends Plugin {
       s1.createSpan({ text: "活跃天数" });
       streakRow.createDiv({ cls: "s2", text: `本周${stats.newThisWeek}篇 · 本月${stats.newThisMonth}篇` });
       const hm = mid.createDiv({ cls: "wb-bs-heatmap" });
-      stats.activity.forEach(v => {
-        const cell = hm.createDiv({ cls: "wb-bs-dot" + (v > 0 ? (v >= 4 ? " l4" : v >= 2 ? " l3" : " l2") : " l0") });
-      });
+      const W = Math.ceil(stats.activity.length / 7);
+      for (let r = 0; r < 7; r++) {
+        for (let c = 0; c < W; c++) {
+          const v = stats.activity[c * 7 + r] || 0;
+          hm.createDiv({ cls: "wb-bs-dot" + (v > 0 ? (v >= 4 ? " l4" : v >= 2 ? " l3" : " l2") : " l0") });
+        }
+      }
 
       /* 右侧：任务完成率 / 连通度 / 孤立率 / 链接每篇 */
       const right = banner.createDiv({ cls: "wb-banner-right" });

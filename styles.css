@@ -55,30 +55,29 @@
   padding: 10px 14px;
   min-height: 125px;
   display: grid;
-  grid-template-columns: minmax(0, .75fr) minmax(0, 1.8fr) minmax(0, .75fr);
-  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
 }
 .wb-banner b { font-weight: 700; }
 /* 左侧（窄） */
 .wb-banner-left { display: flex; flex-direction: column; justify-content: center; gap: 4px; }
-.wb-bs-hero, .wb-bs-strip { width: 100%; }
-.wb-bs-hero { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.wb-bs-hero { display: flex; align-items: baseline; gap: 6px; }
 .wb-bs-hero b { font-size: 22px; line-height: 1; color: var(--wb-accent-2); }
 .wb-bs-hero span { font-size: 12px; color: var(--wb-muted); }
-.wb-bs-strip { display: flex; justify-content: space-between; gap: 8px; flex-wrap: nowrap; }
+.wb-bs-strip { display: flex; gap: 10px; flex-wrap: nowrap; }
 .wb-bs-strip .wb-bs { display: flex; align-items: baseline; gap: 3px; }
 .wb-bs-strip .wb-bs b { font-size: 16px; }
 .wb-bs-strip .wb-bs span { font-size: 11px; color: var(--wb-muted); }
 /* 中间（宽）：活跃天数/周月发文居中 + 点阵占满中间栏 */
-.wb-banner-mid { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px; border-left: 1px solid var(--wb-line); border-right: 1px solid var(--wb-line); padding: 4px 12px; text-align: center; }
+.wb-banner-mid { display: flex; flex-direction: column; justify-content: flex-start; align-items: center; gap: 2px; border-left: 1px solid var(--wb-line); border-right: 1px solid var(--wb-line); padding: 6px 12px 8px; text-align: center; }
 .wb-bs-streak { display: flex; align-items: baseline; justify-content: center; gap: 10px; }
 .wb-bs-streak .s1 { display: flex; align-items: baseline; gap: 5px; }
 .wb-bs-streak .s1 b { font-size: 18px; color: var(--wb-warn); }
 .wb-bs-streak .s1 span { font-size: 12px; color: var(--wb-muted); }
 .wb-bs-streak .s2 { font-size: 12px; color: var(--wb-muted); }
-.wb-bs-heatmap { width: 100%; display: grid; grid-template-columns: repeat(33, 1fr); column-gap: clamp(1px, .18vw, 3px); justify-items: center; }
-.wb-bs-dot { width: min(100%, 15px); aspect-ratio: 1; border-radius: 3px; background: rgba(232,234,242,.08); }
+.wb-bs-heatmap { width: 100%; display: grid; grid-template-columns: repeat(14, 1fr); grid-auto-rows: 12px; gap: 5px 3px; justify-items: center; margin-top: 6px; }
+.wb-bs-dot { width: min(100%, 12px); height: 100%; border-radius: 2px; background: rgba(232,234,242,.08); }
 .wb-bs-dot.l2 { background: rgba(52,211,153,.35); }
 .wb-bs-dot.l3 { background: rgba(52,211,153,.65); }
 .wb-bs-dot.l4 { background: var(--wb-ok); }
