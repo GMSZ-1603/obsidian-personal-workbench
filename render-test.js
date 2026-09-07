@@ -343,6 +343,16 @@ const app = {
   app.vault.cachedRead = _origRead;
   delete app.vault.process;
 
+  console.log("== 天气错误显示 ==");
+  const _origW = plugin.getWeather;
+  plugin.getWeather = async () => ({ error: "和风 Invalid Host: xxx" });
+  await plugin.renderDashboard(el, null, state);
+  const _wxErr = el.querySelector(".wb-wx-empty");
+  check("天气错误显示文案", !!_wxErr && _wxErr.textContent.includes("Invalid Host"), _wxErr && _wxErr.textContent);
+  check("错误时不显示undefined°", !(el.querySelector(".wb-wx-temp") || {}).textContent || !String(el.querySelector(".wb-wx-temp").textContent).includes("undefined"), String(el.querySelector(".wb-wx-temp") ? el.querySelector(".wb-wx-temp").textContent : ""));
+  plugin.getWeather = _origW;
+  await plugin.renderDashboard(el, null, state);
+
   console.log("== 和风天气 ==");
   const _T2 = globalThis.__wb_test;
   const _qwCalls = [];

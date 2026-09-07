@@ -9276,7 +9276,9 @@ class WorkbenchPlugin extends Plugin {
       const card = left.createDiv({ cls: "wb-card" });
       const hd = card.createDiv({ cls: "wb-card-hd" });
       hd.createDiv({ cls: "wb-card-tt", text: `天气 · ${this.settings.city}` });
-      if (weather) {
+      if (weather && weather.error) {
+        card.createDiv({ cls: "wb-wx-empty", text: `天气获取失败：${weather.error}` });
+      } else if (weather) {
         const w = WMO[weather.code] || QW_ICONS[weather.code] || [weather.text || "未知", "🌡️"];
         const wx = card.createDiv({ cls: "wb-weather" });
         const icon = wx.createDiv({ cls: "wb-wx-icon", text: w[1] });
@@ -9299,7 +9301,7 @@ class WorkbenchPlugin extends Plugin {
           f.createSpan({ cls: "wb-wx-flow", text: `${item.min}°` });
         });
       } else {
-        const e = card.createDiv({ cls: "wb-wx-empty", text: weather && weather.error ? `天气获取失败：${weather.error}` : "天气获取失败，请检查网络或设置中的城市/经纬度" });
+        card.createDiv({ cls: "wb-wx-empty", text: "天气获取失败，请检查网络或设置中的城市/经纬度" });
       }
       // 每日一签（参考 apex-dashboard：按日期确定性取，每天不同；分两行展示）
       const lw = card.createDiv({ cls: "wb-wx-lunar" });
