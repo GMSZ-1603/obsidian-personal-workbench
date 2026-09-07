@@ -9193,8 +9193,10 @@ class WorkbenchPlugin extends Plugin {
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     const weekStart = dayStart - 6 * 86400000;
-    const US = 98;
-    const heatStart = dayStart - (US - 1) * 86400000;
+    const US = 98; // 14 周 × 7 天
+    const dow = (now.getDay() + 6) % 7; // 0=周一 .. 6=周日
+    const monday = dayStart - dow * 86400000; // 本周周一 00:00
+    const heatStart = monday - (US - 7) * 86400000; // 窗口起点 = 最早那周的周一
 
     let total = 0, newMonth = 0, newWeek = 0, orphan = 0;
     const activity = new Array(US).fill(0);
@@ -9220,7 +9222,8 @@ class WorkbenchPlugin extends Plugin {
       if (ct >= weekStart) newWeek++;
       if (mt >= heatStart) {
         const Q = Math.floor((dayStart - new Date(new Date(mt).getFullYear(), new Date(mt).getMonth(), new Date(mt).getDate()).getTime()) / 86400000);
-        if (Q >= 0 && Q < US) activity[US - 1 - Q]++;
+        const idx = dow - Q; // 0=最早周一, 97=本周日
+        if (idx >= 0 && idx < US) activity[idx]++;
       }
       activeDates.add(ymdOf(mt));
       if (!hasOut.has(file.path) && !isTarget.has(file.path)) orphan++;
@@ -9338,7 +9341,8 @@ class WorkbenchPlugin extends Plugin {
       s1.createSpan({ text: "活跃天数" });
       streakRow.createDiv({ cls: "s2", text: `本周${stats.newThisWeek}篇 · 本月${stats.newThisMonth}篇` });
       const hm = mid.createDiv({ cls: "wb-bs-heatmap" });
-      const W = Math.ceil(stats.activity.length / 7);
+      const W = Math.ceil(stats.activity.length / 7); // 14 列 = 14 周
+      // 行 r = 周一(0)..周日(6)；列 c = 第 c 周（最右列 = 本周）
       for (let r = 0; r < 7; r++) {
         for (let c = 0; c < W; c++) {
           const v = stats.activity[c * 7 + r] || 0;
