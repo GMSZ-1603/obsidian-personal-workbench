@@ -250,6 +250,20 @@ const app = {
   check("日历生日显示称呼", bdCells.some(t => t.includes("爸爸") && t.includes("62岁")), bdCells.join(","));
   check("日历生日不显示姓名", !bdCells.some(t => t.includes("卢小南")), bdCells.join(","));
 
+  console.log("== 轮休(单双) ==");
+  plugin.settings.restMode = "single-double";
+  plugin.settings.singleDay = "sun";
+  plugin.settings.sdStart = "single"; // 本周(2026-09-07, W37)单休，周日休
+  await plugin.renderDashboard(el, null, state);
+  const cells2 = el.querySelectorAll(".wb-day");
+  const cl = (i) => cells2[i].className || "";
+  check("W37单休周六上班", cl(12).includes("wb-workday") && !cl(12).includes("wb-weekend"), cl(12));
+  check("W37单休周日休息", cl(13).includes("wb-weekend"), cl(13));
+  check("W38双休周六休息", cl(19).includes("wb-weekend"), cl(19));
+  check("9/20调休补班非休息", cl(20).includes("wb-workday") && !cl(20).includes("wb-weekend"), cl(20));
+  plugin.settings.restMode = "double";
+  await plugin.renderDashboard(el, null, state);
+
   console.log("== 日期详情(黄历) ==");
   const dd = el.querySelector(".wb-daydetail");
   check("详情面板存在", !!dd);

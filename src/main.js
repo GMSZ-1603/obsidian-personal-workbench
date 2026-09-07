@@ -55,7 +55,11 @@ const DEFAULT_SETTINGS = {
   yearProgressEnabled: true,
   todayTasksEnabled: true,
   birthdaysEnabled: true,
-  calendarEnabled: true
+  calendarEnabled: true,
+  restMode: "double",
+  singleDay: "sun",
+  sdStart: "double",
+  manualWeeks: {}
 };
 
 /* ---------------- 通用工具 ---------------- */
@@ -70,6 +74,38 @@ function h(tag, cls, text) {
   if (cls) e.className = cls;
   if (text != null) e.textContent = text;
   return e;
+}
+
+/* ISO 周号（周一为一周开始） */
+function isoWeek(y, m, d) {
+  const dt = new Date(y, m - 1, d);
+  const day = (dt.getDay() + 6) % 7;
+  dt.setDate(dt.getDate() - day + 3);
+  const firstThu = new Date(dt.getFullYear(), 0, 4);
+  return 1 + Math.round(((dt - firstThu) / 86400000 - 3 + ((firstThu.getDay() + 6) % 7)) / 7);
+}
+
+/* 周末是否休息（支持单双轮休 / 手动逐周覆盖）dow: 0=周日 6=周六 */
+function weekendRest(settings, y, m, d, dow) {
+  const mode = (settings && settings.restMode) || "double";
+  if (mode === "double") return true;
+  const wk = String(isoWeek(y, m, d));
+  const ov = (settings.manualWeeks || {})[wk];
+  if (mode === "manual") {
+    if (ov === "double") return true;
+    if (ov === "sat") return dow === 6;
+    if (ov === "sun") return dow === 0;
+    return true;
+  }
+  // 单双轮休：手动覆盖优先，未覆盖按奇偶周交替
+  if (ov === "double") return true;
+  if (ov === "sat") return dow === 6;
+  if (ov === "sun") return dow === 0;
+  const n = new Date();
+  const wk0 = isoWeek(n.getFullYear(), n.getMonth() + 1, n.getDate());
+  const single = (settings.sdStart === "single") === ((isoWeek(y, m, d) % 2) === (wk0 % 2));
+  if (single) return dow === (settings.singleDay === "sat" ? 6 : 0);
+  return true;
 }
 
 /* 解析任务文本中的时间描述（如 上午9点 / 下午1点半 / 14:00）→ 当日分钟数；无法解析返回 null */
@@ -927,7 +963,6 @@ class WorkbenchPlugin extends Plugin {
       if (isToday) cell.addClass("wb-today");
       if (state.selected === key) cell.addClass("wb-sel");
       const dow = new Date(c.y, c.m - 1, c.d).getDay();
-      if (dow === 0 || dow === 6) cell.addClass("wb-weekend");
 
       const solar = lunarLib.Solar.fromYmd(c.y, c.m, c.d);
       const lunar = solar.getLunar();
@@ -939,6 +974,10 @@ class WorkbenchPlugin extends Plugin {
       const festName = hol || jq || lfest[0] || sfest[0] || "";
       if (hol !== undefined && hol !== null) cell.addClass("wb-holiday");
       else if (hol === null) cell.addClass("wb-workday");
+      else if (dow === 0 || dow === 6) {
+        if (weekendRest(this.settings, c.y, c.m, c.d, dow)) cell.addClass("wb-weekend");
+        else cell.addClass("wb-workday");
+      }
 
       const num = cell.createDiv({ cls: "wb-day-num", text: String(c.d) });
       if (festName) {
@@ -1092,6 +1131,34 @@ class WorkbenchSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("启动时自动打开工作台").setDesc("打开 Obsidian 时自动打开「个人工作台」视图页签")
       .addToggle(t => t.setValue(this.plugin.settings.openOnStartup).onChange(async v => { this.plugin.settings.openOnStartup = v; await this.plugin.saveSettings(); }));
 
+    containerEl.createEl("h3", { text: "轮休设置" });
+    new Setting(containerEl).setName("周末休息模式").setDesc("单双轮休：单休周只休一天，按奇偶周交替；手动：逐个周末指定")
+      .addDropdown(dd => dd.addOption("double", "每周双休").addOption("single-double", "单双轮休").addOption("manual", "手动逐周")
+        .setValue(this.plugin.settings.restMode)
+        .onChange(async v => { this.plugin.settings.restMode = v; await this.plugin.saveSettings(); }));
+    new Setting(containerEl).setName("单休周休息日").setDesc("单休周休哪一天（另一天上班）")
+      .addDropdown(dd => dd.addOption("sat", "休周六").addOption("sun", "休周日")
+        .setValue(this.plugin.settings.singleDay)
+        .onChange(async v => { this.plugin.settings.singleDay = v; await this.plugin.saveSettings(); }));
+    new Setting(containerEl).setName("当前周状态").setDesc("本周是单休还是双休，轮休按此顺序往下交替")
+      .addDropdown(dd => dd.addOption("single", "本周单休").addOption("double", "本周双休")
+        .setValue(this.plugin.settings.sdStart)
+        .onChange(async v => { this.plugin.settings.sdStart = v; await this.plugin.saveSettings(); }));
+    new Setting(containerEl).setName("手动轮休表").setDesc("逐个周末指定休息安排（仅“手动逐周”模式生效；单双轮休模式亦可覆盖单周）");
+    const _mw = this.plugin.settings.manualWeeks || (this.plugin.settings.manualWeeks = {});
+    const _today = new Date();
+    for (let i = 0; i < 10; i++) {
+      const _sat = new Date(_today);
+      _sat.setDate(_today.getDate() - ((_today.getDay() + 6) % 7) + 5 + i * 7);
+      const _sun = new Date(_sat); _sun.setDate(_sat.getDate() + 1);
+      const _wk = isoWeek(_sat.getFullYear(), _sat.getMonth() + 1, _sat.getDate());
+      const _label = _sat.getMonth() + 1 + "/" + _sat.getDate() + " - " + _sun.getMonth() + 1 + "/" + _sun.getDate() + "（第" + _wk + "周）";
+      new Setting(containerEl).setName(_label)
+        .addDropdown(dd => dd.addOption("double", "双休").addOption("sat", "只休周六").addOption("sun", "只休周日")
+          .setValue(_mw[String(_wk)] || "double")
+          .onChange(async v => { _mw[String(_wk)] = v; await this.plugin.saveSettings(); }));
+    }
+
     containerEl.createEl("h3", { text: "模块开关" });
     ["bannerEnabled", "queryEnabled", "weatherEnabled", "yearProgressEnabled", "todayTasksEnabled", "birthdaysEnabled", "calendarEnabled"].forEach(k => {
       const label = { bannerEnabled: "统计横幅", queryEnabled: "查询栏", weatherEnabled: "天气+当天农历", yearProgressEnabled: "年度进度", todayTasksEnabled: "今日任务", birthdaysEnabled: "生日提醒", calendarEnabled: "农历万年历" }[k];
@@ -1103,7 +1170,7 @@ class WorkbenchSettingTab extends PluginSettingTab {
 
 /* 测试钩子（仅用于构建期自测） */
 if (typeof globalThis !== "undefined") {
-  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, parseTaskTime, lunarLib };
+  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, parseTaskTime, isoWeek, weekendRest, lunarLib };
 }
 
 module.exports = WorkbenchPlugin;
