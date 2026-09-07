@@ -845,13 +845,10 @@ class WorkbenchPlugin extends Plugin {
       s1.createSpan({ text: "活跃天数" });
       streakRow.createDiv({ cls: "s2", text: `本周${stats.newThisWeek}篇 · 本月${stats.newThisMonth}篇` });
       const hm = mid.createDiv({ cls: "wb-bs-heatmap" });
-      const W = Math.ceil(stats.activity.length / 7); // 14 列 = 14 周
-      // 行 r = 周一(0)..周日(6)；列 c = 第 c 周（最右列 = 本周）
-      for (let r = 0; r < 7; r++) {
-        for (let c = 0; c < W; c++) {
-          const v = stats.activity[c * 7 + r] || 0;
-          hm.createDiv({ cls: "wb-bs-dot" + (v > 0 ? (v >= 4 ? " l4" : v >= 2 ? " l3" : " l2") : " l0") });
-        }
+      // 3 行 × 33 列 = 99 格（近 98 天活跃 + 1 空位），时间从左上到右下连续流动
+      for (let i = 0; i < 99; i++) {
+        const v = i < stats.activity.length ? stats.activity[i] : 0;
+        hm.createDiv({ cls: "wb-bs-dot" + (v > 0 ? (v >= 4 ? " l4" : v >= 2 ? " l3" : " l2") : " l0") });
       }
 
       /* 右侧：任务完成率 / 连通度 / 孤立率 / 链接每篇 */

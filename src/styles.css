@@ -76,7 +76,7 @@
 .wb-bs-streak .s1 b { font-size: 18px; color: var(--wb-warn); }
 .wb-bs-streak .s1 span { font-size: 12px; color: var(--wb-muted); }
 .wb-bs-streak .s2 { font-size: 12px; color: var(--wb-muted); }
-.wb-bs-heatmap { width: fit-content; margin: 6px auto 0; display: grid; grid-template-columns: repeat(14, 10px); grid-auto-rows: 10px; gap: 3px 2px; justify-items: center; }
+.wb-bs-heatmap { width: fit-content; margin: 10px auto 0; display: grid; grid-template-columns: repeat(33, 10px); grid-auto-rows: 10px; gap: 4px 2px; justify-items: center; }
 .wb-bs-dot { width: 100%; height: 100%; border-radius: 2px; background: rgba(232,234,242,.08); }
 .wb-bs-dot.l2 { background: rgba(52,211,153,.35); }
 .wb-bs-dot.l3 { background: rgba(52,211,153,.65); }

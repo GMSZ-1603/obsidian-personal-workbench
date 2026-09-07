@@ -186,7 +186,7 @@ const app = {
   check("孤立率", bannerText.includes("孤立率"));
   check("链接/篇", bannerText.includes("链接/篇"));
   const dots = el.querySelectorAll(".wb-bs-dot");
-  check("活动点阵98格", dots.length === 98, "got " + dots.length);
+  check("活动点阵99格", dots.length === 99, "got " + dots.length);
   const hero = banner && banner.querySelector(".wb-bs-hero");
   const heroB = hero && hero.children.find(c => c.tag === "b");
   check("总笔记数>0", !!heroB && parseInt(heroB.textContent) > 0, heroB && heroB.textContent);
