@@ -343,6 +343,37 @@ const app = {
   app.vault.cachedRead = _origRead;
   delete app.vault.process;
 
+  console.log("== 和风天气 ==");
+  const _T2 = globalThis.__wb_test;
+  const _qwCalls = [];
+  const _mockQw = async ({ url }) => {
+    _qwCalls.push(url);
+    if (url.includes("/now")) return { status: 200, json: { code: "200", now: { temp: "28", feelsLike: "31", humidity: "77", windSpeed: "18", icon: "104", text: "阴" } } };
+    return { status: 200, json: { code: "200", daily: [
+      { fxDate: "2026-09-07", iconDay: "101", textDay: "多云", tempMax: "29", tempMin: "24" },
+      { fxDate: "2026-09-08", iconDay: "300", textDay: "阵雨", tempMax: "28", tempMin: "23" },
+      { fxDate: "2026-09-09", iconDay: "104", textDay: "阴", tempMax: "27", tempMin: "22" },
+      { fxDate: "2026-09-10", iconDay: "101", textDay: "多云", tempMax: "28", tempMin: "22" },
+      { fxDate: "2026-09-11", iconDay: "100", textDay: "晴", tempMax: "30", tempMin: "23" },
+      { fxDate: "2026-09-12", iconDay: "104", textDay: "阴", tempMax: "29", tempMin: "23" },
+      { fxDate: "2026-09-13", iconDay: "101", textDay: "多云", tempMax: "28", tempMin: "22" }
+    ] } };
+  };
+  const _qw = await _T2.fetchQWeather({ longitude: 119.97, latitude: 31.77, qweatherKey: "TESTKEY" }, _mockQw);
+  check("和风URL用devapi", _qwCalls[0].startsWith("https://devapi.qweather.com/v7/weather/now"), _qwCalls[0]);
+  check("和风URL含经纬度", _qwCalls[0].includes("119.97,31.77") && _qwCalls[0].includes("key=TESTKEY"), _qwCalls[0]);
+  check("和风温度", _qw.temp === 28, String(_qw.temp));
+  check("和风体感湿度", _qw.feels === 31 && _qw.humidity === 77, _qw.feels + "/" + _qw.humidity);
+  check("和风icon映射阴", _T2.QW_ICONS[_qw.code] && _T2.QW_ICONS[_qw.code][0] === "阴", _T2.QW_ICONS[_qw.code] && _T2.QW_ICONS[_qw.code].join("/"));
+  check("和风7天预报", _qw.list.length === 7, String(_qw.list.length));
+  check("和风预报字段映射", _qw.list[0].max === 29 && _qw.list[0].code === "101" && _qw.list[1].code === "300", JSON.stringify(_qw.list[0]));
+  check("和风阵雨emoji", _T2.QW_ICONS["300"][1].length > 0, _T2.QW_ICONS["300"].join("/"));
+  const _omCalls = [];
+  const _mockOm = async ({ url }) => { _omCalls.push(url); return { status: 200, json: { current: { temperature_2m: 30, apparent_temperature: 33, relative_humidity_2m: 69, weather_code: 3, wind_speed_10m: 6 }, daily: { time: ["2026-09-07"], weather_code: [3], temperature_2m_max: [29], temperature_2m_min: [24] } } }; };
+  const _om = await _T2.fetchWeather({ latitude: 31.77, longitude: 119.97, qweatherKey: "" }, _mockOm);
+  check("无key回退Open-Meteo", _omCalls[0].startsWith("https://api.open-meteo.com"), _omCalls[0]);
+  check("Open-Meteo温度正常", _om.temp === 30, String(_om.temp));
+
   console.log("\n通过 " + pass + " / " + (pass + fail));
   process.exit(fail ? 1 : 0);
 })();

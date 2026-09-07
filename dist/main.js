@@ -8540,6 +8540,22 @@ const WMO = {
   95: ["雷阵雨", "⛈️"], 96: ["雷阵雨伴冰雹", "⛈️"], 99: ["强雷暴伴冰雹", "⛈️"]
 };
 
+/* 和风天气 icon 映射（填写 qweatherKey 时使用） */
+const QW_ICONS = {
+  "100": ["晴", "☀️"], "101": ["多云", "⛅"], "102": ["少云", "🌤️"], "103": ["晴间多云", "🌤️"], "104": ["阴", "☁️"],
+  "150": ["晴(夜)", "🌙"], "151": ["多云(夜)", "☁️"], "152": ["少云(夜)", "☁️"], "153": ["晴间多云(夜)", "☁️"],
+  "300": ["阵雨", "🌦️"], "301": ["强阵雨", "🌧️"], "302": ["雷阵雨", "⛈️"], "303": ["雷阵雨伴冰雹", "⛈️"],
+  "304": ["小雨转雷阵雨", "⛈️"], "305": ["中雨转雷阵雨", "⛈️"], "306": ["大雨转雷阵雨", "⛈️"], "307": ["冻雨", "🌧️"],
+  "308": ["小到中雨", "🌧️"], "309": ["中到大雨", "🌧️"], "310": ["大到暴雨", "🌧️"], "311": ["暴雨", "🌧️"],
+  "312": ["大暴雨", "🌧️"], "313": ["特大暴雨", "🌧️"], "314": ["强降雨", "🌧️"], "315": ["毛毛雨", "🌦️"],
+  "400": ["小雪", "❄️"], "401": ["中雪", "❄️"], "402": ["大雪", "❄️"], "403": ["暴雪", "❄️"], "404": ["雨夹雪", "🌨️"],
+  "405": ["雨雪天气", "🌨️"], "406": ["阵雨夹雪", "🌨️"], "407": ["阵雪", "❄️"], "408": ["小到中雪", "❄️"],
+  "409": ["中到大雪", "❄️"], "410": ["大到暴雪", "❄️"], "411": ["冻雪", "❄️"],
+  "500": ["薄雾", "🌫️"], "501": ["雾", "🌫️"], "502": ["霾", "😷🏻"], "503": ["扬沙", "💨"], "504": ["浮尘", "💨"],
+  "507": ["沙尘暴", "💨"], "508": ["强沙尘暴", "💨"], "509": ["浓雾", "🌫️"], "510": ["强浓雾", "🌫️"],
+  "511": ["中度霾", "😷🏻"], "512": ["重度霾", "😷🏻"], "513": ["严重霾", "😷🏻"], "514": ["大雾", "🌫️"], "515": ["特强浓雾", "🌫️"],
+  "900": ["热", "🥵"], "901": ["冷", "🥶"], "999": ["未知", "🌡️"]
+};
 const DEFAULT_SETTINGS = {
   city: "常州",
   latitude: 31.77,
@@ -8547,6 +8563,7 @@ const DEFAULT_SETTINGS = {
   birthdayFile: "生活/生日日期.md",
   excludeFolders: ["图片", "Templates", "OneNote", "smart-note-agent", ".smartnotes", "微信公众号文章", "统计"],
   refreshMinutes: 30,
+  qweatherKey: "",
   openOnStartup: true,
   bannerEnabled: true,
   queryEnabled: true,
@@ -8886,12 +8903,16 @@ async function scanBirthdays(app, settings) {
   return list;
 }
 
-async function fetchWeather(settings) {
+async function fetchWeather(settings, _req) {
+  const req = _req || requestUrl;
+  if (settings.qweatherKey && String(settings.qweatherKey).trim()) {
+    return await fetchQWeather(settings, _req);
+  }
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${settings.latitude}&longitude=${settings.longitude}` +
     `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m` +
     `&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia%2FShanghai&forecast_days=7`;
-  const res = await requestUrl({ url });
+  const res = await req({ url });
   if (res.status !== 200) throw new Error("weather status " + res.status);
   const j = res.json;
   const cur = j.current;
@@ -8912,6 +8933,34 @@ async function fetchWeather(settings) {
   };
 }
 
+/* 和风天气（填写 qweatherKey 时使用，免费版 1000 次/日）*/
+async function fetchQWeather(settings, _req) {
+  const req = _req || requestUrl;
+  const loc = `${settings.longitude},${settings.latitude}`;
+  const key = String(settings.qweatherKey).trim();
+  const base = "https://devapi.qweather.com/v7/weather/";
+  const [nowR, dailyR] = await Promise.all([
+    req({ url: `${base}now?location=${loc}&key=${key}` }),
+    req({ url: `${base}7d?location=${loc}&key=${key}` })
+  ]);
+  if (!nowR.json || !nowR.json.now) throw new Error("qweather now failed: " + (nowR.json && nowR.json.code));
+  const now = nowR.json.now;
+  const daily = (dailyR.json && dailyR.json.daily) || [];
+  return {
+    temp: Math.round(Number(now.temp)),
+    feels: Math.round(Number(now.feelsLike)),
+    humidity: Math.round(Number(now.humidity)),
+    wind: Math.round(Number(now.windSpeed)),
+    code: String(now.icon || ""),
+    text: now.text || "",
+    list: daily.slice(0, 7).map(d => ({
+      date: d.fxDate,
+      code: String(d.iconDay || ""),
+      max: Math.round(Number(d.tempMax)),
+      min: Math.round(Number(d.tempMin))
+    }))
+  };
+}
 /* ---------------- 主插件 ---------------- */
 class WorkbenchPlugin extends Plugin {
   async onload() {
@@ -9223,7 +9272,7 @@ class WorkbenchPlugin extends Plugin {
       const hd = card.createDiv({ cls: "wb-card-hd" });
       hd.createDiv({ cls: "wb-card-tt", text: `天气 · ${this.settings.city}` });
       if (weather) {
-        const w = WMO[weather.code] || ["未知", "🌡️"];
+        const w = WMO[weather.code] || QW_ICONS[weather.code] || [weather.text || "未知", "🌡️"];
         const wx = card.createDiv({ cls: "wb-weather" });
         const icon = wx.createDiv({ cls: "wb-wx-icon", text: w[1] });
         const temp = wx.createDiv({ cls: "wb-wx-temp" });
@@ -9239,7 +9288,7 @@ class WorkbenchPlugin extends Plugin {
         weather.list.slice(0, 6).forEach((item, i) => {
           const f = fc.createDiv({ cls: "wb-wx-f" });
           f.createSpan({ cls: "wb-wx-fday", text: i === 0 ? "今天" : wnames[(now.getDay() - 5 + i + 7) % 7] });
-          const c = WMO[item.code] || ["", ""];
+          const c = WMO[item.code] || QW_ICONS[item.code] || ["", ""];
           f.createSpan({ cls: "wb-wx-ic", text: c[1] });
           f.createEl("b", { text: `${item.max}°` });
           f.createSpan({ cls: "wb-wx-flow", text: `${item.min}°` });
@@ -9671,6 +9720,13 @@ class WorkbenchSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("城市").setDesc("天气卡片显示的城市名（仅展示用）")
       .addText(t => t.setValue(this.plugin.settings.city).onChange(async v => { this.plugin.settings.city = v; await this.plugin.saveSettings(); }));
 
+    new Setting(containerEl).setName("和风天气 API Key").setDesc("填写后使用和风（更精准，实况 15 分钟更新）；留空则回退 Open-Meteo。登录 dev.qweather.com 获取，免费版每日 1000 次")
+      .addText(t => t.setPlaceholder("QWeather API Key").setValue(this.plugin.settings.qweatherKey).onChange(async v => {
+        this.plugin.settings.qweatherKey = v.trim();
+        this.plugin.weatherCache.stale = true;
+        await this.plugin.saveSettings();
+      }));
+
     new Setting(containerEl).setName("纬度 / 经度").setDesc("天气数据使用（Open-Meteo，免费无需 key）。常州默认 31.77 / 119.97")
       .addText(t => t.setPlaceholder("纬度").setValue(String(this.plugin.settings.latitude)).onChange(async v => {
         const n = parseFloat(v); if (!isNaN(n)) { this.plugin.settings.latitude = n; this.plugin.weatherCache.stale = true; await this.plugin.saveSettings(); }
@@ -9754,7 +9810,7 @@ class WorkbenchSettingTab extends PluginSettingTab {
 
 /* 测试钩子（仅用于构建期自测） */
 if (typeof globalThis !== "undefined") {
-  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, parseTaskTime, isoWeek, weekendRest, yearWeekends, lunarLib };
+  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, parseTaskTime, isoWeek, weekendRest, yearWeekends, lunarLib, fetchWeather, fetchQWeather, QW_ICONS };
 }
 
 module.exports = WorkbenchPlugin;
