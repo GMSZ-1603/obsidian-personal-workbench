@@ -9,6 +9,25 @@ const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Component, ItemVi
 
 const VIEW_TYPE_WORKBENCH = "personal-workbench-view";
 
+/* 法定节假日（来源：国务院办公厅《关于2026年部分节假日安排的通知》国办发明电〔2025〕7号）
+ * 值 = 假日名（放假）；null = 调休上班日（周末补班）。2027 年起需按新年度通知更新。 */
+const HOLIDAYS = {
+  "2026-01-01": "元旦", "2026-01-02": "元旦", "2026-01-03": "元旦", "2026-01-04": null,
+  "2026-02-14": null,
+  "2026-02-15": "春节", "2026-02-16": "春节", "2026-02-17": "春节", "2026-02-18": "春节",
+  "2026-02-19": "春节", "2026-02-20": "春节", "2026-02-21": "春节", "2026-02-22": "春节", "2026-02-23": "春节",
+  "2026-02-28": null,
+  "2026-04-04": "清明", "2026-04-05": "清明", "2026-04-06": "清明",
+  "2026-05-01": "劳动节", "2026-05-02": "劳动节", "2026-05-03": "劳动节", "2026-05-04": "劳动节", "2026-05-05": "劳动节",
+  "2026-05-09": null,
+  "2026-06-19": "端午", "2026-06-20": "端午", "2026-06-21": "端午",
+  "2026-09-20": null,
+  "2026-09-25": "中秋", "2026-09-26": "中秋", "2026-09-27": "中秋",
+  "2026-10-01": "国庆", "2026-10-02": "国庆", "2026-10-03": "国庆", "2026-10-04": "国庆",
+  "2026-10-05": "国庆", "2026-10-06": "国庆", "2026-10-07": "国庆",
+  "2026-10-10": null
+};
+
 /* ---------------- 常量 ---------------- */
 const LUNAR_MONTHS = { 正: 1, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12, 冬: 11, 腊: 12 };
 const CN_NUM = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
@@ -869,6 +888,7 @@ class WorkbenchPlugin extends Plugin {
     legend.createSpan({ text: "● 有任务", cls: "wb-lg-task" });
     legend.createSpan({ text: "● 生日", cls: "wb-lg-bday" });
     legend.createSpan({ text: "● 节气/节日", cls: "wb-lg-term" });
+    legend.createSpan({ text: "● 假期", cls: "wb-lg-holiday" });
 
     // 网格
     const grid = card.createDiv({ cls: "wb-cal-grid" });
@@ -915,7 +935,10 @@ class WorkbenchPlugin extends Plugin {
       const lfest = lunar.getFestivals() || [];
       const sfest = solar.getFestivals() || [];
       const oFest = lunar.getOtherFestivals() || [];
-      const festName = jq || lfest[0] || sfest[0] || "";
+      const hol = HOLIDAYS[key];
+      const festName = hol || jq || lfest[0] || sfest[0] || "";
+      if (hol !== undefined && hol !== null) cell.addClass("wb-holiday");
+      else if (hol === null) cell.addClass("wb-workday");
 
       const num = cell.createDiv({ cls: "wb-day-num", text: String(c.d) });
       if (festName) {
@@ -924,6 +947,7 @@ class WorkbenchPlugin extends Plugin {
         cell.createDiv({ cls: "wb-day-lunar", text: lunar.getDayInChinese() });
       }
       const badges = cell.createDiv({ cls: "wb-day-badges" });
+      if (hol !== undefined && hol !== null) badges.createSpan({ cls: "wb-badge wb-bg-holiday", title: hol });
       if (jq) badges.createSpan({ cls: "wb-badge wb-bg-term", title: "节气" });
       if (lfest.length || sfest.length) badges.createSpan({ cls: "wb-badge wb-bg-fest", title: "节日" });
       const tasks = tasksByDate[key];

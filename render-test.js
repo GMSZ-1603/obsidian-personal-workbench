@@ -245,7 +245,7 @@ const app = {
   const festCells = el.querySelectorAll(".wb-day-fest").map(c => c.textContent);
   check("白露", festCells.includes("白露"), festCells.join(","));
   check("秋分", festCells.includes("秋分"), festCells.join(","));
-  check("中秋节", festCells.includes("中秋节"), festCells.join(","));
+  check("中秋节", festCells.some(t => t.includes("中秋")), festCells.join(","));
   const bdCells = el.querySelectorAll(".wb-day-bd").map(c => c.textContent);
   check("日历生日显示称呼", bdCells.some(t => t.includes("爸爸") && t.includes("62岁")), bdCells.join(","));
   check("日历生日不显示姓名", !bdCells.some(t => t.includes("卢小南")), bdCells.join(","));
