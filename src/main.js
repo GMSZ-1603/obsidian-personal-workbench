@@ -849,7 +849,7 @@ class WorkbenchPlugin extends Plugin {
     });
     const txt = row.createDiv({ cls: "wb-task-txt", text: t.text });
     txt.title = t.file;
-    const date = row.createDiv({ cls: "wb-task-date" });
+    const date = row.createDiv({ cls: "wb-task-date" + (t.due && t.date === t.due ? " wb-due" : "") });
     date.createSpan({ cls: "wb-task-flag", text: t.scheduled ? "📅" : "⏳", title: t.scheduled ? "计划开始" : "截止" });
     date.createSpan({ text: t.date.slice(5) });
     row.addEventListener("click", () => {

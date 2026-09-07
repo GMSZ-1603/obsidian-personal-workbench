@@ -253,7 +253,8 @@ const app = {
     { file: "工作/i.md", text: "逾期任务E", raw: "", done: false, scheduled: "2026-08-21", due: null, date: "2026-08-21" },
     { file: "工作/j.md", text: "逾期任务F", raw: "", done: false, scheduled: "2026-07-31", due: null, date: "2026-07-31" },
     { file: "工作/k.md", text: "后续任务X", raw: "", done: false, scheduled: "2026-10-01", due: null, date: "2026-10-01" },
-    { file: "工作/l.md", text: "后续任务Y", raw: "", done: false, scheduled: "2026-11-01", due: null, date: "2026-11-01" }
+    { file: "工作/l.md", text: "后续任务Y", raw: "", done: false, scheduled: "2026-11-01", due: null, date: "2026-11-01" },
+    { file: "工作/m.md", text: "截止任务", raw: "", done: false, scheduled: null, due: "2026-09-07", date: "2026-09-07" }
   ];
   await plugin.renderDashboard(el, null, state);
   const _taskCard = [...el.querySelectorAll(".wb-card")].find(c => {
@@ -265,7 +266,7 @@ const app = {
   check("后续任务标题", _subs.some(t => t.startsWith("后续任务")), _subs.join(","));
   const _sc = _taskCard ? _taskCard.querySelectorAll(".wb-tasklist-scroll") : [];
   check("逾期/后续均为滚动列表", _sc.length === 2, String(_sc.length));
-  const _todayList = _taskCard ? _taskCard.querySelector(".wb-tasklist:not(.wb-tasklist-scroll)") : null;
+  const _todayList = _taskCard ? [..._taskCard.querySelectorAll(".wb-tasklist")].find(l => !l.className.includes("wb-tasklist-scroll")) : null;
   if (_todayList) {
     const _times = [..._todayList.querySelectorAll(".wb-task-txt")].map(e => e.textContent);
     const _parsed = _times.map(t => (globalThis.__wb_test.parseTaskTime(t) ?? 1e9));
@@ -274,6 +275,12 @@ const app = {
   } else {
     check("今日任务按时间排序", true, "今日无任务");
   }
+  const _dueRow = _todayList ? [..._todayList.querySelectorAll(".wb-task")].find(r => r.querySelector(".wb-task-txt") && r.querySelector(".wb-task-txt").textContent.includes("截止任务")) : null;
+  const _dueDate = _dueRow ? _dueRow.querySelector(".wb-task-date") : null;
+  check("due日期红色标记", !!_dueDate && _dueDate.className.includes("wb-due"), _dueDate && _dueDate.className);
+  const _schRow = _todayList ? [..._todayList.querySelectorAll(".wb-task")].find(r => r.querySelector(".wb-task-txt") && r.querySelector(".wb-task-txt").textContent.includes("上午8点半")) : null;
+  const _schDate = _schRow ? _schRow.querySelector(".wb-task-date") : null;
+  check("scheduled日期不加红色", !!_schDate && !_schDate.className.includes("wb-due"), _schDate && _schDate.className);
 
   console.log("== 日历 ==");
   const cells = el.querySelectorAll(".wb-day");
