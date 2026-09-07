@@ -359,9 +359,11 @@ const app = {
       { fxDate: "2026-09-13", iconDay: "101", textDay: "多云", tempMax: "28", tempMin: "22" }
     ] } };
   };
-  const _qw = await _T2.fetchQWeather({ longitude: 119.97, latitude: 31.77, qweatherKey: "TESTKEY" }, _mockQw);
-  check("和风URL用devapi", _qwCalls[0].startsWith("https://devapi.qweather.com/v7/weather/now"), _qwCalls[0]);
+  const _qw = await _T2.fetchQWeather({ longitude: 119.97, latitude: 31.77, qweatherKey: "TESTKEY", qweatherHost: "devapi.qweather.com" }, _mockQw);
+  check("和风URL用自定义Host", _qwCalls[0].startsWith("https://devapi.qweather.com/v7/weather/now"), _qwCalls[0]);
   check("和风URL含经纬度", _qwCalls[0].includes("119.97,31.77") && _qwCalls[0].includes("key=TESTKEY"), _qwCalls[0]);
+  const _qwDef = await _T2.fetchQWeather({ longitude: 119.97, latitude: 31.77, qweatherKey: "TESTKEY" }, _mockQw);
+  check("默认Host为api.qweather.com", _qwCalls[2].startsWith("https://api.qweather.com"), _qwCalls[2]);
   check("和风温度", _qw.temp === 28, String(_qw.temp));
   check("和风体感湿度", _qw.feels === 31 && _qw.humidity === 77, _qw.feels + "/" + _qw.humidity);
   check("和风icon映射阴", _T2.QW_ICONS[_qw.code] && _T2.QW_ICONS[_qw.code][0] === "阴", _T2.QW_ICONS[_qw.code] && _T2.QW_ICONS[_qw.code].join("/"));

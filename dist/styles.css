@@ -52,7 +52,8 @@
     linear-gradient(120deg, #1c1f2e, #222639);
   border: 1px solid var(--wb-line);
   border-radius: var(--wb-radius);
-  padding: 6px 12px;
+  padding: 10px 14px;
+  min-height: 125px;
   display: grid;
   grid-template-columns: minmax(0, .85fr) minmax(0, 1.6fr) minmax(0, .85fr);
   gap: 12px;
@@ -102,10 +103,10 @@
 }
 .wb-qb-icon { color: var(--wb-accent-2); font-size: 16px; font-weight: 700; }
 .wb-querybar input {
-  flex: 1; background: transparent; border: none; outline: none;
-  color: var(--wb-text); font-size: 13px; box-shadow: none !important;
+  flex: 1; background: #ffffff; border: none; outline: none; border-radius: 8px;
+  color: #14161f; font-size: 13px; box-shadow: none !important; padding: 8px 12px;
 }
-.wb-querybar input::placeholder { color: var(--wb-muted); opacity: .7; }
+.wb-querybar input::placeholder { color: #7a7f95; opacity: .9; }
 .wb-qb-hint { font-size: 10px; color: var(--wb-muted); border: 1px solid var(--wb-line); border-radius: 5px; padding: 2px 8px; white-space: nowrap; }
 .wb-qb-drop {
   position: absolute; top: calc(100% + 6px); left: 0; width: 100%; z-index: 999;

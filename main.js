@@ -8564,6 +8564,7 @@ const DEFAULT_SETTINGS = {
   excludeFolders: ["图片", "Templates", "OneNote", "smart-note-agent", ".smartnotes", "微信公众号文章", "统计"],
   refreshMinutes: 30,
   qweatherKey: "",
+  qweatherHost: "api.qweather.com",
   openOnStartup: true,
   bannerEnabled: true,
   queryEnabled: true,
@@ -8938,12 +8939,15 @@ async function fetchQWeather(settings, _req) {
   const req = _req || requestUrl;
   const loc = `${settings.longitude},${settings.latitude}`;
   const key = String(settings.qweatherKey).trim();
-  const base = "https://devapi.qweather.com/v7/weather/";
+  const base = `https://${settings.qweatherHost || "api.qweather.com"}/v7/weather/`;
   const [nowR, dailyR] = await Promise.all([
     req({ url: `${base}now?location=${loc}&key=${key}` }),
     req({ url: `${base}7d?location=${loc}&key=${key}` })
   ]);
-  if (!nowR.json || !nowR.json.now) throw new Error("qweather now failed: " + (nowR.json && nowR.json.code));
+  if (!nowR.json || !nowR.json.now) {
+    const er = nowR.json && nowR.json.error;
+    throw new Error("和风 " + (er ? (er.title || er.status) : "请求失败 HTTP " + nowR.status) + (er && er.detail ? ": " + er.detail : ""));
+  }
   const now = nowR.json.now;
   const daily = (dailyR.json && dailyR.json.daily) || [];
   return {
@@ -9069,6 +9073,7 @@ class WorkbenchPlugin extends Plugin {
       c.stale = false;
     } catch (e) {
       console.warn("workbench weather failed", e);
+      c.data = { error: e && e.message ? String(e.message) : "天气获取失败" };
       c.stale = false;
     }
     return c.data;
@@ -9294,7 +9299,7 @@ class WorkbenchPlugin extends Plugin {
           f.createSpan({ cls: "wb-wx-flow", text: `${item.min}°` });
         });
       } else {
-        const e = card.createDiv({ cls: "wb-wx-empty", text: "天气获取失败，请检查网络或设置中的城市/经纬度" });
+        const e = card.createDiv({ cls: "wb-wx-empty", text: weather && weather.error ? `天气获取失败：${weather.error}` : "天气获取失败，请检查网络或设置中的城市/经纬度" });
       }
       // 每日一签（参考 apex-dashboard：按日期确定性取，每天不同；分两行展示）
       const lw = card.createDiv({ cls: "wb-wx-lunar" });
@@ -9719,6 +9724,12 @@ class WorkbenchSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName("城市").setDesc("天气卡片显示的城市名（仅展示用）")
       .addText(t => t.setValue(this.plugin.settings.city).onChange(async v => { this.plugin.settings.city = v; await this.plugin.saveSettings(); }));
+
+    new Setting(containerEl).setName("和风天气 API Host").setDesc("以控制台（创建 API Key 时）显示的 Host 为准，默认 api.qweather.com；旧平台 key 可用 devapi.qweather.com")
+      .addText(t => t.setPlaceholder("api.qweather.com").setValue(this.plugin.settings.qweatherHost).onChange(async v => {
+        const h = v.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+        if (h) { this.plugin.settings.qweatherHost = h; this.plugin.weatherCache.stale = true; await this.plugin.saveSettings(); }
+      }));
 
     new Setting(containerEl).setName("和风天气 API Key").setDesc("填写后使用和风（更精准，实况 15 分钟更新）；留空则回退 Open-Meteo。登录 dev.qweather.com 获取，免费版每日 1000 次")
       .addText(t => t.setPlaceholder("QWeather API Key").setValue(this.plugin.settings.qweatherKey).onChange(async v => {
