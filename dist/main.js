@@ -8508,20 +8508,23 @@ const VIEW_TYPE_WORKBENCH = "personal-workbench-view";
 /* 法定节假日（来源：国务院办公厅《关于2026年部分节假日安排的通知》国办发明电〔2025〕7号）
  * 值 = 假日名（放假）；null = 调休上班日（周末补班）。2027 年起需按新年度通知更新。 */
 const HOLIDAYS = {
-  "2026-01-01": "元旦", "2026-01-02": "元旦", "2026-01-03": "元旦", "2026-01-04": null,
-  "2026-02-14": null,
-  "2026-02-15": "春节", "2026-02-16": "春节", "2026-02-17": "春节", "2026-02-18": "春节",
-  "2026-02-19": "春节", "2026-02-20": "春节", "2026-02-21": "春节", "2026-02-22": "春节", "2026-02-23": "春节",
-  "2026-02-28": null,
-  "2026-04-04": "清明", "2026-04-05": "清明", "2026-04-06": "清明",
-  "2026-05-01": "劳动节", "2026-05-02": "劳动节", "2026-05-03": "劳动节", "2026-05-04": "劳动节", "2026-05-05": "劳动节",
-  "2026-05-09": null,
-  "2026-06-19": "端午", "2026-06-20": "端午", "2026-06-21": "端午",
-  "2026-09-20": null,
-  "2026-09-25": "中秋", "2026-09-26": "中秋", "2026-09-27": "中秋",
-  "2026-10-01": "国庆", "2026-10-02": "国庆", "2026-10-03": "国庆", "2026-10-04": "国庆",
-  "2026-10-05": "国庆", "2026-10-06": "国庆", "2026-10-07": "国庆",
-  "2026-10-10": null
+  "2026": {
+    "2026-01-01": "元旦", "2026-01-02": "元旦", "2026-01-03": "元旦", "2026-01-04": null,
+    "2026-02-14": null,
+    "2026-02-15": "春节", "2026-02-16": "春节", "2026-02-17": "春节", "2026-02-18": "春节",
+    "2026-02-19": "春节", "2026-02-20": "春节", "2026-02-21": "春节", "2026-02-22": "春节", "2026-02-23": "春节",
+    "2026-02-28": null,
+    "2026-04-04": "清明", "2026-04-05": "清明", "2026-04-06": "清明",
+    "2026-05-01": "劳动节", "2026-05-02": "劳动节", "2026-05-03": "劳动节", "2026-05-04": "劳动节", "2026-05-05": "劳动节",
+    "2026-05-09": null,
+    "2026-06-19": "端午", "2026-06-20": "端午", "2026-06-21": "端午",
+    "2026-09-20": null,
+    "2026-09-25": "中秋", "2026-09-26": "中秋", "2026-09-27": "中秋",
+    "2026-10-01": "国庆", "2026-10-02": "国庆", "2026-10-03": "国庆", "2026-10-04": "国庆",
+    "2026-10-05": "国庆", "2026-10-06": "国庆", "2026-10-07": "国庆",
+    "2026-10-10": null
+  }
+  // 每年 11 月国务院公布次年安排后，在此新增一年数据："2027": { ... }
 };
 
 /* ---------------- 常量 ---------------- */
@@ -8581,12 +8584,24 @@ function isoWeek(y, m, d) {
   return 1 + Math.round(((dt - firstThu) / 86400000 - 3 + ((firstThu.getDay() + 6) % 7)) / 7);
 }
 
+/* 某年全部周末：{ ISO周号: [周六Date, 周日Date] } */
+function yearWeekends(year) {
+  const map = {};
+  const d = new Date(year, 0, 1);
+  for (; d.getFullYear() === year; d.setDate(d.getDate() + 1)) {
+    const wk = isoWeek(d.getFullYear(), d.getMonth() + 1, d.getDate());
+    const dow = d.getDay();
+    if (dow === 6 || dow === 0) (map[wk] = map[wk] || []).push(new Date(d));
+  }
+  return map;
+}
+
 /* 周末是否休息（支持单双轮休 / 手动逐周覆盖）dow: 0=周日 6=周六 */
 function weekendRest(settings, y, m, d, dow) {
   const mode = (settings && settings.restMode) || "double";
   if (mode === "double") return true;
   const wk = String(isoWeek(y, m, d));
-  const ov = (settings.manualWeeks || {})[wk];
+  const ov = ((settings.manualWeeks || {})[String(y)] || {})[wk];
   if (mode === "manual") {
     if (ov === "double") return true;
     if (ov === "sat") return dow === 6;
@@ -8901,6 +8916,15 @@ async function fetchWeather(settings) {
 class WorkbenchPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
+    // 轮休表旧数据迁移：旧格式 { 周号: 值 } -> { 年份: { 周号: 值 } }
+    {
+      const _mw0 = this.settings.manualWeeks || {};
+      const _k0 = Object.keys(_mw0)[0];
+      if (_k0 && !/^\d{4}$/.test(_k0)) {
+        this.settings.manualWeeks = { [String(new Date().getFullYear())]: _mw0 };
+        await this.saveSettings();
+      }
+    }
     this.tasksCache = { data: null, stale: true, scanning: false };
     this.birthdayCache = { data: null, stale: true };
     this.weatherCache = { data: null, stale: true };
@@ -9468,7 +9492,7 @@ class WorkbenchPlugin extends Plugin {
       const lfest = lunar.getFestivals() || [];
       const sfest = solar.getFestivals() || [];
       const oFest = lunar.getOtherFestivals() || [];
-      const hol = HOLIDAYS[key];
+      const hol = (HOLIDAYS[String(c.y)] || {})[key];
       const festName = hol || jq || lfest[0] || sfest[0] || "";
       if (hol !== undefined && hol !== null) cell.addClass("wb-holiday");
       else if (hol === null) cell.addClass("wb-workday");
@@ -9642,20 +9666,40 @@ class WorkbenchSettingTab extends PluginSettingTab {
       .addDropdown(dd => dd.addOption("single", "本周单休").addOption("double", "本周双休")
         .setValue(this.plugin.settings.sdStart)
         .onChange(async v => { this.plugin.settings.sdStart = v; await this.plugin.saveSettings(); }));
-    new Setting(containerEl).setName("手动轮休表").setDesc("逐个周末指定休息安排（仅“手动逐周”模式生效；单双轮休模式亦可覆盖单周）");
+    // 手动轮休表：折叠 + 年份切换 + 全年周列表
+    const _det = containerEl.createEl("details", { cls: "wb-rest-details" });
+    _det.createEl("summary", { text: "手动轮休表（全年逐周，点击展开）", cls: "wb-rest-summary" });
+    const _curYear = new Date().getFullYear();
+    let _selYear = _curYear;
     const _mw = this.plugin.settings.manualWeeks || (this.plugin.settings.manualWeeks = {});
-    const _today = new Date();
-    for (let i = 0; i < 10; i++) {
-      const _sat = new Date(_today);
-      _sat.setDate(_today.getDate() - ((_today.getDay() + 6) % 7) + 5 + i * 7);
-      const _sun = new Date(_sat); _sun.setDate(_sat.getDate() + 1);
-      const _wk = isoWeek(_sat.getFullYear(), _sat.getMonth() + 1, _sat.getDate());
-      const _label = _sat.getMonth() + 1 + "/" + _sat.getDate() + " - " + _sun.getMonth() + 1 + "/" + _sun.getDate() + "（第" + _wk + "周）";
-      new Setting(containerEl).setName(_label)
-        .addDropdown(dd => dd.addOption("double", "双休").addOption("sat", "只休周六").addOption("sun", "只休周日")
-          .setValue(_mw[String(_wk)] || "double")
-          .onChange(async v => { _mw[String(_wk)] = v; await this.plugin.saveSettings(); }));
-    }
+    const _renderWeeks = () => {
+      _det.querySelectorAll(".wb-rest-week").forEach(e => e.remove());
+      const mwYear = _mw[String(_selYear)] || (_mw[String(_selYear)] = {});
+      const wends = yearWeekends(_selYear);
+      Object.keys(wends).sort((a, b) => +a - +b).forEach(wk => {
+        const [sat, sun] = wends[wk];
+        const _label = (sat.getMonth() + 1) + "/" + sat.getDate() + " - " + (sun.getMonth() + 1) + "/" + sun.getDate() + "（第" + wk + "周）";
+        new Setting(_det).setName(_label).setClass("wb-rest-week")
+          .addDropdown(dd => dd.addOption("double", "双休").addOption("sat", "只休周六").addOption("sun", "只休周日")
+            .setValue(mwYear[String(wk)] || "double")
+            .onChange(async v => { mwYear[String(wk)] = v; await this.plugin.saveSettings(); }));
+      });
+    };
+    new Setting(_det).setName("年份").setDesc("切换年份查看/配置该年轮休表（每年独立保存）")
+      .addDropdown(dd => {
+        for (let y = _curYear - 1; y <= _curYear + 2; y++) dd.addOption(String(y), String(y) + "年");
+        return dd.setValue(String(_selYear)).onChange(async v => { _selYear = +v; _renderWeeks(); });
+      })
+      .addButton(b => b.setButtonText("复制上一年").onClick(async () => {
+        const src = _mw[String(_selYear - 1)] || {};
+        _mw[String(_selYear)] = JSON.parse(JSON.stringify(src));
+        await this.plugin.saveSettings(); _renderWeeks();
+      }))
+      .addButton(b => b.setButtonText("清空全年").onClick(async () => {
+        _mw[String(_selYear)] = {};
+        await this.plugin.saveSettings(); _renderWeeks();
+      }));
+    _renderWeeks();
 
     containerEl.createEl("h3", { text: "模块开关" });
     ["bannerEnabled", "queryEnabled", "weatherEnabled", "yearProgressEnabled", "todayTasksEnabled", "birthdaysEnabled", "calendarEnabled"].forEach(k => {
@@ -9668,7 +9712,7 @@ class WorkbenchSettingTab extends PluginSettingTab {
 
 /* 测试钩子（仅用于构建期自测） */
 if (typeof globalThis !== "undefined") {
-  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, parseTaskTime, isoWeek, weekendRest, lunarLib };
+  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, parseTaskTime, isoWeek, weekendRest, yearWeekends, lunarLib };
 }
 
 module.exports = WorkbenchPlugin;

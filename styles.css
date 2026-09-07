@@ -281,3 +281,8 @@
   .wb-dd-right { border-left: none; padding-left: 0; margin-top: 8px; }
   .wb-qb-hint { display: none; }
 }
+
+/* ---------- 设置页：轮休表折叠 ---------- */
+.wb-rest-details { margin: 10px 0 6px; }
+.wb-rest-summary { cursor: pointer; font-weight: 600; user-select: none; padding: 2px 0; }
+.wb-rest-week { margin-left: 10px; }
