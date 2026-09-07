@@ -9316,7 +9316,9 @@ class WorkbenchPlugin extends Plugin {
     if (t.done) box.textContent = "✓";
     const txt = row.createDiv({ cls: "wb-task-txt", text: t.text });
     txt.title = t.file;
-    const date = row.createDiv({ cls: "wb-task-date", text: t.date.slice(5) });
+    const date = row.createDiv({ cls: "wb-task-date" });
+    date.createSpan({ cls: "wb-task-flag", text: t.scheduled ? "📅" : "⏳", title: t.scheduled ? "计划开始" : "截止" });
+    date.createSpan({ text: t.date.slice(5) });
     row.addEventListener("click", () => {
       const f = plugin.app.vault.getAbstractFileByPath(t.file);
       if (f) plugin.app.workspace.getLeaf(false).openFile(f);
