@@ -345,8 +345,8 @@ async function scanTasks(app, settings) {
       if (!m) continue;
       const done = m[1] !== " ";
       const raw = m[2];
-      const scheduled = (raw.match(/⏳\s*(\d{4}-\d{2}-\d{2})/) || [])[1] || null;
-      const due = (raw.match(/📅\s*(\d{4}-\d{2}-\d{2})/) || [])[1] || null;
+      const scheduled = (raw.match(/📅\s*(\d{4}-\d{2}-\d{2})/) || [])[1] || null;
+      const due = (raw.match(/⏳\s*(\d{4}-\d{2}-\d{2})/) || [])[1] || null;
       const date = scheduled || due; // 优先 scheduled，无则 due
       if (!date) continue;
       const clean = raw

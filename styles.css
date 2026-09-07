@@ -181,10 +181,10 @@
 .wb-task.wb-done { opacity: .55; }
 .wb-task.wb-done .wb-task-box { background: var(--wb-ok); border-color: var(--wb-ok); }
 .wb-task-txt { min-width: 0; flex: 1; word-break: break-word; }
-.wb-task-date { color: var(--wb-muted); font-size: 10px; flex-shrink: 0; margin-left: auto; text-align: right; white-space: nowrap; }
+.wb-task-date { color: #c9d0de; font-size: 10px; flex-shrink: 0; margin-left: auto; text-align: right; white-space: nowrap; }
 .wb-task-flag { margin-right: 4px; }
 .wb-task.wb-overdue .wb-task-date { color: var(--wb-danger); }
-.wb-task-src { font-size: 9px; color: var(--wb-muted); opacity: .6; width: 150px; flex-shrink: 0; margin-left: 6px; text-align: right; word-break: break-all; line-height: 1.5; }
+.wb-task-src { font-size: 9px; color: #b6bfcf; width: 150px; flex-shrink: 0; margin-left: 6px; text-align: right; word-break: break-all; line-height: 1.5; }
 .wb-empty { font-size: 12px; color: var(--wb-muted); text-align: center; padding: 8px 0; }
 .wb-divider { height: 1px; background: var(--wb-line); margin: 12px 0 8px; }
 .wb-subhead { font-size: 11px; color: var(--wb-muted); margin-bottom: 6px; }
@@ -229,10 +229,9 @@
 .wb-day.wb-today { border-color: var(--wb-accent); box-shadow: 0 0 0 1px var(--wb-accent); }
 .wb-day.wb-sel { border-color: var(--wb-accent-2); box-shadow: 0 0 0 1px var(--wb-accent-2); }
 .wb-day-num { font-size: 13px; font-weight: 600; }
-.wb-day.wb-weekend .wb-day-num { color: var(--wb-holiday); }
-.wb-day.wb-workday .wb-day-num { color: var(--wb-text); }
-.wb-day.wb-holiday { border-color: color-mix(in srgb, var(--wb-holiday) 45%, transparent); }
-.wb-day.wb-holiday .wb-day-num { color: var(--wb-holiday); }
+.wb-day.wb-weekend { background: color-mix(in srgb, var(--wb-holiday) 10%, var(--wb-card-2)); }
+.wb-day.wb-workday { background: var(--wb-card-2); }
+.wb-day.wb-holiday { background: color-mix(in srgb, var(--wb-holiday) 16%, var(--wb-card-2)); border-color: color-mix(in srgb, var(--wb-holiday) 45%, transparent); }
 .wb-day.wb-holiday .wb-day-fest { color: var(--wb-holiday); }
 .wb-day.wb-today .wb-day-num { color: var(--wb-accent-2); }
 .wb-day-lunar { font-size: 9px; color: var(--wb-muted); margin-top: 2px; }
@@ -253,7 +252,7 @@
 
 /* ---------- 选中日详情 ---------- */
 .wb-daydetail {
-  display: grid; grid-template-columns: fit-content(165px) 1fr; gap: 14px;
+  display: grid; grid-template-columns: fit-content(118px) 1fr; gap: 10px;
   margin-top: 12px; background: var(--wb-card-2); border: 1px solid var(--wb-line);
   border-radius: 11px; padding: 13px 15px;
 }
