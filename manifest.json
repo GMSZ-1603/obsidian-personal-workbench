@@ -1,6 +1,6 @@
 {
   "id": "personal-workbench",
-  "name": "个人工作台",
+  "name": "Personal Workbench",
   "version": "1.3.3",
   "minAppVersion": "1.5.0",
   "description": "个人工作台（独立视图页签）：顶部统计横幅、查询栏、天气+农历+每日一签、农历万年历（节气/节日/生日/任务）、年度进度、今日任务、生日提醒；左右栏独立滚动。",
