@@ -609,6 +609,8 @@ class WorkbenchPlugin extends Plugin {
   async renderDashboard(el, ctx, state) {
     if (state.loading) return;
     state.loading = true;
+    this._wbEl = el;
+    this._wbState = state;
     const now = new Date();
     if (!state.year || !state.month) { state.year = now.getFullYear(); state.month = now.getMonth() + 1; }
     const solarToday = lunarLib.Solar.fromYmd(now.getFullYear(), now.getMonth() + 1, now.getDate());
@@ -749,19 +751,8 @@ class WorkbenchPlugin extends Plugin {
       } else {
         const e = card.createDiv({ cls: "wb-wx-empty", text: "天气获取失败，请检查网络或设置中的城市/经纬度" });
       }
-      // 当天农历信息（参考 apex-dashboard）
-      const lw = card.createDiv({ cls: "wb-wx-lunar" });
-      const gz = lw.createDiv({ cls: "wb-lunar-ganzhi" });
-      gz.textContent = `${lToday.getYearInGanZhi()}年 ${lToday.getShengxiao()} · ${lToday.getMonthInGanZhi()}月 ${lToday.getDayInGanZhi()}日`;
-      const ld = lw.createDiv({ cls: "wb-lunar-date" });
-      ld.textContent = `农历 ${lunarMonthCn(lToday.getMonth())}月${lToday.getDayInChinese()}`;
-      const festNames = [...(lToday.getFestivals() || []), ...(lToday.getOtherFestivals() || []), ...(solarToday.getFestivals() || [])];
-      const jq = lToday.getJieQi();
-      if (jq) festNames.unshift(jq);
-      if (festNames.length) {
-        const ftag = ld.createSpan({ cls: "wb-lunar-fest", text: festNames.slice(0, 2).join(" · ") });
-      }
       // 每日一签（参考 apex-dashboard：按日期确定性取，每天不同；分两行展示）
+      const lw = card.createDiv({ cls: "wb-wx-lunar" });
       const lq = lw.createDiv({ cls: "wb-lunar-quote" });
       splitQuote(dailyQuote(now.getFullYear(), now.getMonth() + 1, now.getDate())).forEach(seg => lq.createDiv({ cls: "wb-lunar-verse", text: seg }));
     }
@@ -801,6 +792,7 @@ class WorkbenchPlugin extends Plugin {
         const sh = card.createDiv({ cls: "wb-subhead", text: `逾期任务（${overdue.length}）` });
         const tl2 = card.createDiv({ cls: "wb-tasklist wb-tasklist-scroll" });
         overdue.forEach(t => tl2.appendChild(this.renderTaskItem(this, t, now, true)));
+        this.attachWheelGuard(tl2);
       }
       const later = activeTasks.filter(t => t.date > today).sort((a, b) => a.date.localeCompare(b.date));
       if (later.length) {
@@ -808,6 +800,7 @@ class WorkbenchPlugin extends Plugin {
         const sh2 = card.createDiv({ cls: "wb-subhead", text: `后续任务（${later.length}）` });
         const tl3 = card.createDiv({ cls: "wb-tasklist wb-tasklist-scroll" });
         later.forEach(t => tl3.appendChild(this.renderTaskItem(this, t, now)));
+        this.attachWheelGuard(tl3);
       }
     }
 
@@ -850,6 +843,10 @@ class WorkbenchPlugin extends Plugin {
     if (isOverdue || (t.date < todayStr() && !t.done)) row.addClass("wb-overdue");
     const box = row.createDiv({ cls: "wb-task-box" });
     if (t.done) box.textContent = "✓";
+    box.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.toggleTaskComplete(t);
+    });
     const txt = row.createDiv({ cls: "wb-task-txt", text: t.text });
     txt.title = t.file;
     const date = row.createDiv({ cls: "wb-task-date" });
@@ -860,6 +857,40 @@ class WorkbenchPlugin extends Plugin {
       if (f) plugin.app.workspace.getLeaf(false).openFile(f);
     });
     return row;
+  }
+
+  /* 勾选任务：写回笔记并刷新 */
+  async toggleTaskComplete(t) {
+    if (!this.app || !t.file) return;
+    const f = this.app.vault.getAbstractFileByPath(t.file);
+    if (!f || f.extension !== "md") return;
+    let content;
+    try { content = await this.app.vault.cachedRead(f); } catch (e) { return; }
+    const lines = content.split("\n");
+    const target = t.raw.trim();
+    const idx = lines.findIndex(line => {
+      const m = line.match(/^\s*[-*+]\s+\[( |x|X)\]\s+(.*)$/);
+      return m && m[2].trim() === target;
+    });
+    if (idx < 0) return;
+    lines[idx] = t.done
+      ? lines[idx].replace(/\[(x|X)\]/, "[ ]")
+      : lines[idx].replace(/\[( |x|X)\]/, "[x]");
+    try {
+      await this.app.vault.process(f, () => lines.join("\n"));
+    } catch (e) { console.warn("workbench toggle fail", e); return; }
+    this.tasksCache.stale = true;
+    this.birthdayCache.stale = false;
+    await this.renderDashboard(this._wbEl || this.containerEl, null, this._wbState || { year: 0, month: 0, selected: todayStr(), loading: false });
+  }
+
+  /* 滚动隔离：子列表可滚动时拦截 wheel 不传给父级 */
+  attachWheelGuard(list) {
+    list.addEventListener("wheel", (ev) => {
+      const canUp = list.scrollTop > 0;
+      const canDown = list.scrollTop + list.clientHeight < list.scrollHeight;
+      if ((ev.deltaY < 0 && canUp) || (ev.deltaY > 0 && canDown)) ev.stopPropagation();
+    }, { passive: true });
   }
 
   /* 查询栏（参考 hearth） */
@@ -957,7 +988,8 @@ class WorkbenchPlugin extends Plugin {
     const legend = card.createDiv({ cls: "wb-cal-legend" });
     legend.createSpan({ text: "● 有任务", cls: "wb-lg-task" });
     legend.createSpan({ text: "● 生日", cls: "wb-lg-bday" });
-    legend.createSpan({ text: "● 节气/节日", cls: "wb-lg-term" });
+    legend.createSpan({ text: "● 节日", cls: "wb-lg-fest" });
+    legend.createSpan({ text: "● 节气", cls: "wb-lg-term" });
     legend.createSpan({ text: "● 假期", cls: "wb-lg-holiday" });
 
     // 网格
@@ -1005,7 +1037,6 @@ class WorkbenchPlugin extends Plugin {
       const sfest = solar.getFestivals() || [];
       const oFest = lunar.getOtherFestivals() || [];
       const hol = (HOLIDAYS[String(c.y)] || {})[key];
-      const festName = hol || jq || lfest[0] || sfest[0] || "";
       if (hol !== undefined && hol !== null) cell.addClass("wb-holiday");
       else if (hol === null) cell.addClass("wb-workday");
       else if (dow === 0 || dow === 6) {
@@ -1014,8 +1045,11 @@ class WorkbenchPlugin extends Plugin {
       }
 
       const num = cell.createDiv({ cls: "wb-day-num", text: String(c.d) });
-      if (festName) {
-        cell.createDiv({ cls: "wb-day-fest", text: festName });
+      const festParts = [];
+      if (hol || lfest.length || sfest.length) festParts.push({ t: hol || lfest[0] || sfest[0], k: "wb-fest" });
+      if (jq) festParts.push({ t: jq, k: "wb-jq" });
+      if (festParts.length) {
+        festParts.forEach(p => cell.createDiv({ cls: "wb-day-fest " + p.k, text: p.t }));
       } else {
         cell.createDiv({ cls: "wb-day-lunar", text: lunar.getDayInChinese() });
       }

@@ -202,10 +202,10 @@ const app = {
   const _now = new Date();
   const _l = T.lunarLib.Solar.fromYmd(_now.getFullYear(), _now.getMonth() + 1, _now.getDate()).getLunar();
   const _mCn = ["", "正", "二", "三", "四", "五", "六", "七", "八", "九", "十", "冬", "腊"][_l.getMonth()];
-  check("农历干支", !!wxl && textOf(wxl).includes(_l.getYearInGanZhi() + "年"));
-  check("农历日期(今日)", !!wxl && textOf(wxl).includes(`农历 ${_mCn}月${_l.getDayInChinese()}`), textOf(wxl));
+  check("农历干支已移除", !!wxl && !textOf(wxl).includes(_l.getYearInGanZhi() + "年"), textOf(wxl));
+  check("农历日期已移除", !!wxl && !textOf(wxl).includes(`农历 ${_mCn}月${_l.getDayInChinese()}`), textOf(wxl));
   const _fest = _l.getOtherFestivals() || [];
-  check("节日标签", !!wxl && (_fest.length === 0 || textOf(wxl).includes(_fest[0])), textOf(wxl) + " / " + _fest.join(","));
+  check("节日标签已移除", !!wxl && !(_fest.length && textOf(wxl).includes(_fest[0])), textOf(wxl) + " / " + _fest.join(","));
   // 每日一签：与当日日期哈希结果一致
   const qv = el.querySelector(".wb-lunar-verse");
   const expectQ = T.dailyQuote(_now.getFullYear(), _now.getMonth() + 1, _now.getDate());
@@ -307,6 +307,34 @@ const app = {
   check("宜", ddText.includes("宜"));
   check("忌", ddText.includes("忌"));
   check("干支", ddText.includes("庚辰"));
+
+  console.log("== 节气/节日分开 ==");
+  const _allFestEls = el.querySelectorAll(".wb-day-fest");
+  const _jqEls = _allFestEls.filter(c => c.className.includes("wb-jq")).map(c => c.textContent);
+  const _festEls = _allFestEls.filter(c => c.className.includes("wb-fest")).map(c => c.textContent);
+  check("节气独立绿色标记(白露/秋分)", _jqEls.includes("白露") && _jqEls.includes("秋分"), _jqEls.join(","));
+  check("节日独立红色标记(中秋)", _festEls.some(t => t.includes("中秋")), _festEls.join(","));
+
+  console.log("== 天气下方农历已移除 ==");
+  check("无干支行", !el.querySelector(".wb-lunar-ganzhi"));
+  check("无农历日期行", !el.querySelector(".wb-lunar-date"));
+  check("引用语保留", !!el.querySelector(".wb-lunar-quote"));
+
+  console.log("== 勾选写回 ==");
+  const tmpPath = "工作/__wb_test_toggle.md";
+  const tmpContent = "- [ ] 测试任务A 📅 2026-09-07\n- [ ] 测试任务B 📅 2026-09-07\n";
+  const _origGet = app.vault.getAbstractFileByPath;
+  const _origRead = app.vault.cachedRead;
+  app.vault.getAbstractFileByPath = (p) => p === tmpPath ? { path: tmpPath, extension: "md" } : _origGet(p);
+  app.vault.cachedRead = async (file) => file.path === tmpPath ? tmpContent : _origRead(file);
+  let _processed = null;
+  app.vault.process = async (file, fn) => { _processed = { path: file.path, out: fn() }; };
+  await plugin.toggleTaskComplete({ file: tmpPath, raw: "测试任务A 📅 2026-09-07", done: false, scheduled: "2026-09-07", due: null, date: "2026-09-07" });
+  check("勾选写回[x]", _processed && _processed.out.includes("- [x] 测试任务A"), _processed && _processed.out);
+  check("不误改其他行", _processed && _processed.out.includes("- [ ] 测试任务B"), _processed && _processed.out);
+  app.vault.getAbstractFileByPath = _origGet;
+  app.vault.cachedRead = _origRead;
+  delete app.vault.process;
 
   console.log("\n通过 " + pass + " / " + (pass + fail));
   process.exit(fail ? 1 : 0);

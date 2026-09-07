@@ -122,7 +122,7 @@
 
 /* ---------- 网格：左右两栏独立滚动 ---------- */
 .wb-dashboard .wb-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px 1fr; grid-template-rows: minmax(0, 1fr); gap: 12px; align-items: stretch; }
-.wb-dashboard .wb-left { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.wb-dashboard .wb-left { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
 .wb-dashboard .wb-calcard { min-height: 0; overflow-y: auto; padding-right: 4px; }
 
 /* ---------- 卡片通用 ---------- */
@@ -172,7 +172,7 @@
 
 /* ---------- 任务 ---------- */
 .wb-tasklist { display: flex; flex-direction: column; gap: 7px; }
-.wb-tasklist-scroll { max-height: 170px; overflow-y: auto; padding-right: 2px; }
+.wb-tasklist-scroll { max-height: 170px; overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; }
 .wb-tasklist-scroll::-webkit-scrollbar { width: 4px; }
 .wb-tasklist-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 2px; }
 .wb-tasklist-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -181,6 +181,7 @@
 .wb-task-box {
   width: 13px; height: 13px; border: 1.5px solid var(--wb-muted); border-radius: 4px;
   margin-top: 2px; flex-shrink: 0; font-size: 9px; line-height: 11px; text-align: center; color: #0b0d13;
+  cursor: pointer;
 }
 .wb-task.wb-done { opacity: .55; }
 .wb-task.wb-done .wb-task-box { background: var(--wb-ok); border-color: var(--wb-ok); }
@@ -219,7 +220,8 @@
 .wb-cal-legend { display: flex; gap: 14px; font-size: 10px; color: var(--wb-muted); margin: 8px 0 10px; align-items: center; }
 .wb-lg-task { color: var(--wb-accent-2); }
 .wb-lg-bday { color: var(--wb-bday); }
-.wb-lg-term { color: var(--wb-warn); }
+.wb-lg-fest { color: var(--wb-warn); }
+.wb-lg-term { color: #7fd6b0; }
 .wb-lg-holiday { color: var(--wb-holiday); }
 .wb-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
 .wb-dow { text-align: center; font-size: 10px; color: var(--wb-muted); padding: 4px 0; }
@@ -240,12 +242,14 @@
 .wb-day.wb-today .wb-day-num { color: var(--wb-accent-2); }
 .wb-day-lunar { font-size: 9px; color: var(--wb-muted); margin-top: 2px; }
 .wb-day-fest { font-size: 10px; color: var(--wb-warn); font-weight: 600; margin-top: 3px; }
+.wb-day-fest.wb-jq { color: #7fd6b0; }
+.wb-day-fest.wb-fest { color: var(--wb-warn); }
 .wb-day-badges { position: absolute; right: 6px; top: 6px; display: flex; gap: 3px; }
 .wb-badge { width: 6px; height: 6px; border-radius: 50%; }
 .wb-bg-task { background: var(--wb-accent-2); }
 .wb-bg-bday { background: var(--wb-bday); }
 .wb-bg-holiday { background: var(--wb-holiday); }
-.wb-bg-term { background: var(--wb-warn); }
+.wb-bg-term { background: #2fa37f; }
 .wb-bg-fest { background: var(--wb-warn); }
 .wb-day-tcnt {
   position: absolute; bottom: 5px; right: 6px; font-size: 9px; color: var(--wb-accent-2);
