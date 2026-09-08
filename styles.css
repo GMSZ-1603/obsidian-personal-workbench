@@ -127,7 +127,9 @@
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 .dashboard-banner-stat-icon svg { width: 20px; height: 20px; }
-.dashboard-banner-stat-sub { margin-top: 4px; font-size: 0.62em; color: rgba(255, 255, 255, 0.62); }
+.dashboard-banner-stat-sub { display: flex; flex-direction: column; align-items: center; gap: 3px; margin-top: 5px; font-size: 0.62em; color: rgba(255, 255, 255, 0.62); }
+.dashboard-banner-stat-sub-row { display: flex; justify-content: center; gap: 16px; }
+.dashboard-banner-stat-sub-item { white-space: nowrap; }
 .dashboard-banner-stat-chart { margin-top: auto; width: 100%; display: flex; justify-content: center; }
 .dashboard-banner-heatmap {
   display: grid;
