@@ -9342,6 +9342,7 @@ class WorkbenchPlugin extends Plugin {
     }
     return {
       totalNotes: total,
+      noteList: files.map(f => ({ p: f.path, m: f.stat.mtime })),
       newThisMonth: newMonth,
       newThisWeek: newWeek,
       newThisQuarter: newQuarter,
@@ -9467,7 +9468,19 @@ class WorkbenchPlugin extends Plugin {
         _wStart.setHours(0, 0, 0, 0);
         const _hsK = ymdOf(_wStart.getTime() - (_wd - 1) * 86400000);
         let _heatN = 0;
-        if (stats.dayHist) for (const [k, v] of stats.dayHist.entries()) if (k >= _hsK) _heatN += v;
+        const _wMs = _wStart.getTime() - (_wd - 1) * 86400000;
+        if (stats.noteList && stats.noteList.length) {
+          const _set = new Set();
+          for (const f of stats.noteList) if (f.m >= _wMs) _set.add(f.p);
+          const _el2 = this.settings.editLog || {};
+          for (const [k, v] of Object.entries(_el2)) {
+            if (!Array.isArray(v) || !v.length) continue;
+            if (new Date(k + "T00:00:00").getTime() >= _wMs) for (const p of v) _set.add(p);
+          }
+          _heatN = _set.size;
+        } else if (stats.dayHist) {
+          for (const [k, v] of stats.dayHist.entries()) if (k >= _hsK) _heatN += v;
+        }
         [["本周", stats.newThisWeek], ["本月", stats.newThisMonth], ["本季", stats.newThisQuarter], ["本年", stats.newThisYear], ["近" + _wd + "天", _heatN]]
           .forEach(([l, n]) => sub.createSpan({ cls: "dashboard-banner-stat-sub-item", text: `${l}${n}篇` }));
       }
