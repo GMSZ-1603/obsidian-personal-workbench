@@ -9668,17 +9668,38 @@ class WorkbenchPlugin extends Plugin {
     const arr = new Array(days).fill(0);
     const base = new Date();
     base.setHours(0, 0, 0, 0);
+    const ymdArr = new Array(days);
     for (let d = 0; d < days; d++) {
       const ymd = ymdOf(base.getTime() - (days - 1 - d) * 86400000);
+      ymdArr[d] = ymd;
       arr[d] = (dayHist && dayHist.get(ymd)) || 0;
     }
     if (typeof hm.style.setProperty === "function") hm.style.setProperty("--heat-cols", String(cols)); else hm.style["--heat-cols"] = String(cols);
     const _max = Math.max(1, ...arr);
+    const _WD = "日一二三四五六";
+    let tip = null;
+    const _hideTip = () => { if (tip) { tip.detach(); tip = null; } };
     for (let a = 0; a < arr.length; a++) {
       const cell = hm.createDiv({ cls: "dashboard-banner-heatmap-cell" });
       const r = arr[a] / _max;
       cell.addClass("dashboard-banner-heatmap-cell--l" + (arr[a] <= 0 ? 0 : r <= 0.25 ? 1 : r <= 0.5 ? 2 : r <= 0.75 ? 3 : 4));
       if (a === arr.length - 1) cell.addClass("dashboard-banner-heatmap-cell--today");
+      const ymd = ymdArr[a];
+      const v = arr[a];
+      cell.setAttribute("data-ymd", ymd);
+      cell.setAttribute("data-n", String(v));
+      cell.addEventListener("mousemove", (ev) => {
+        if (!tip) tip = hm.createDiv({ cls: "wb-heat-tip" });
+        const _d = new Date(ymd + "T00:00:00");
+        tip.textContent = `${_d.getFullYear()}年${_d.getMonth() + 1}月${_d.getDate()}日 周${_WD[_d.getDay()]} · 编辑 ${v} 篇`;
+        const rect = hm.getBoundingClientRect();
+        const _w = tip.offsetWidth || 130;
+        let _l = ev.clientX - rect.left + 12;
+        if (_l + _w > rect.width) _l = ev.clientX - rect.left - _w - 12;
+        tip.style.left = Math.max(0, _l) + "px";
+        tip.style.top = Math.max(0, ev.clientY - rect.top + 14) + "px";
+      });
+      cell.addEventListener("mouseleave", _hideTip);
     }
   }
 

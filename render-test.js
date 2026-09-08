@@ -209,6 +209,9 @@ const app = {
   const numL = banner && banner.querySelector(".dashboard-banner-stat-num");
   check("总笔记数>0", !!numL && parseInt(numL.textContent) > 0, numL && numL.textContent);
   check("热力图today标记", !!el.querySelector(".dashboard-banner-heatmap-cell--today"));
+  const _tc = el.querySelector(".dashboard-banner-heatmap-cell--today") || dots[0];
+  check("热力格带data-ymd(供tooltip)", !!_tc && !!_tc._attrs && !!_tc._attrs["data-ymd"], _tc && _tc._attrs && _tc._attrs["data-ymd"]);
+  check("热力格绑mousemove(tooltip)", !!_tc && !!_tc.listeners && Array.isArray(_tc.listeners.mousemove) && _tc.listeners.mousemove.length > 0);
 
   console.log("== 查询栏 ==");
   check("查询栏存在", !!el.querySelector(".wb-querybar"));
