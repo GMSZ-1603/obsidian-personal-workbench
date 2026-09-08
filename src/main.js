@@ -827,6 +827,7 @@ class WorkbenchPlugin extends Plugin {
       propsCount: propKeys.size,
       totalLinks,
       streak: calcStreak(activeDates),
+      activeDays: activeDates.size,
       orphanRate: total ? Math.round(orphan / total * 100) : 0,
       avgLinksPerNote: total ? totalLinks / total : 0,
       connectivity: total ? Math.round((total - orphan) / total * 100) : 0,
@@ -932,7 +933,7 @@ class WorkbenchPlugin extends Plugin {
       const heroM = topM.createDiv({ cls: "dashboard-banner-stat-hero" });
       const iconM = heroM.createDiv({ cls: "dashboard-banner-stat-icon" });
       _setIcon(iconM, "flame");
-      heroM.createEl("span", { cls: "dashboard-banner-stat-num", text: `${stats.streak}天` });
+      heroM.createEl("span", { cls: "dashboard-banner-stat-num", text: `${stats.activeDays}天` });
       heroM.createDiv({ cls: "dashboard-banner-stat-label dashboard-banner-stat-label--inline", text: "活跃天数" });
       mid.createDiv({ cls: "dashboard-banner-stat-sub", text: `本周${stats.newThisWeek}篇 · 本月${stats.newThisMonth}篇` });
       const chart = mid.createDiv({ cls: "dashboard-banner-stat-chart" });
