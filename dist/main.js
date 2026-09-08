@@ -9481,14 +9481,8 @@ class WorkbenchPlugin extends Plugin {
         } else if (stats.dayHist) {
           for (const [k, v] of stats.dayHist.entries()) if (k >= _hsK) _heatN += v;
         }
-        const _items = [];
         [["本周", stats.newThisWeek], ["本月", stats.newThisMonth], ["本季", stats.newThisQuarter], ["本年", stats.newThisYear], ["近" + _wd + "天", _heatN]]
-          .forEach(([l, n]) => _items.push([l, n]));
-        const _rows = [_items.slice(0, 3), _items.slice(3)];
-        _rows.forEach(row => {
-          const _row = sub.createDiv({ cls: "dashboard-banner-stat-sub-row" });
-          row.forEach(([l, n]) => _row.createSpan({ cls: "dashboard-banner-stat-sub-item", text: `${l}${n}篇` }));
-        });
+          .forEach(([l, n]) => sub.createSpan({ cls: "dashboard-banner-stat-sub-item", text: `${l}${n}篇` }));
       }
       const chart = mid.createDiv({ cls: "dashboard-banner-stat-chart" });
       const hm = chart.createDiv({ cls: "dashboard-banner-heatmap" });
