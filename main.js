@@ -9261,13 +9261,11 @@ class WorkbenchPlugin extends Plugin {
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     const weekStart = dayStart - 6 * 86400000;
-    const MAX_HEAT_DAYS = 150; // 热力图可用最大天数（3 行 × 最多 50 列）
-    const histStart = dayStart - (MAX_HEAT_DAYS - 1) * 86400000; // 直方图起点（今天往前 150 天）
+    // 统计策略：先按全部 md 笔记的最后编辑时间(mtime)建立基线，再用编辑日志按天覆盖
 
     let total = 0, newMonth = 0, newWeek = 0, orphan = 0;
     const dayHist = new Map();
     const _elog = this.settings.editLog || {};
-    const _hasElog = Object.keys(_elog).length > 0;
     const propKeys = new Set();
     const activeDates = new Set();
     const tags = new Map();
@@ -9289,11 +9287,11 @@ class WorkbenchPlugin extends Plugin {
       const mt = file.stat.mtime;
       if (ct >= monthStart) newMonth++;
       if (ct >= weekStart) newWeek++;
-      if (!_hasElog && mt >= histStart) {
+      {
         const _hymd = ymdOf(mt);
         dayHist.set(_hymd, (dayHist.get(_hymd) || 0) + 1);
       }
-      if (!_hasElog) activeDates.add(ymdOf(mt));
+      activeDates.add(ymdOf(mt));
       if (!hasOut.has(file.path) && !isTarget.has(file.path)) orphan++;
       const cache = this.app.metadataCache.getFileCache(file);
       if (cache && cache.frontmatter) for (const k of Object.keys(cache.frontmatter)) propKeys.add(String(k).trim());
@@ -9311,14 +9309,9 @@ class WorkbenchPlugin extends Plugin {
         if (li.task !== undefined) { totalTasks++; if (li.task === "x" || li.task === "X") doneTasks++; }
       }
     }
-    // 有编辑日志：以逐次编辑记录为准；无日志（首次启用）：用 mtime 分布回填
-    if (_hasElog) {
-      for (const [k, v] of Object.entries(_elog)) {
-        if (typeof v === "number" && v > 0) { dayHist.set(k, v); activeDates.add(k); }
-      }
-    } else if (dayHist.size > 0) {
-      this.settings.editLog = Object.fromEntries(dayHist);
-      if (this.app && this.app.vault && this.app.vault.adapter) this.saveSettings();
+    // 编辑日志有记录的日期，以逐次编辑计数覆盖 mtime 基线
+    for (const [k, v] of Object.entries(_elog)) {
+      if (typeof v === "number" && v > 0) { dayHist.set(k, v); activeDates.add(k); }
     }
     return {
       totalNotes: total,
