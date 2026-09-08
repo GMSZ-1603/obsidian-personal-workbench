@@ -9073,6 +9073,27 @@ class WorkbenchPlugin extends Plugin {
     });
 
     // 编辑日志：编辑/创建计入当天编辑篇数；删除从当天移除（附件非 md 天然排除）
+    // 移动/重命名笔记不计入编辑计数：Obsidian 移动文件会触发 modify，需按 rename 识别并排除
+    this._pendingRename = new Set();
+    this._renameTimers = {};
+    this.registerEvent(this.app.vault.on("rename", (f) => {
+      if (!f || f.extension !== "md") return;
+      this._pendingRename.add(f.path);
+      const _k = todayStr();
+      try {
+        this.settings.movedLog = this.settings.movedLog || {};
+        const _ml = this.settings.movedLog;
+        const arr = _ml[_k] || (_ml[_k] = []);
+        if (!arr.includes(f.path)) arr.push(f.path);
+        for (const dk of Object.keys(_ml)) if (new Date(dk + "T00:00:00").getTime() < Date.now() - 400 * 86400000) delete _ml[dk];
+        this.saveSettings();
+      } catch (e) { /* 静默 */ }
+      clearTimeout(this._renameTimers[f.path]);
+      this._renameTimers[f.path] = setTimeout(() => {
+        this._pendingRename.delete(f.path);
+        delete this._renameTimers[f.path];
+      }, 3000);
+    }));
     this.registerEvent(this.app.vault.on("modify", (f) => this.trackEdit(f)));
     this.registerEvent(this.app.vault.on("create", (f) => this.trackEdit(f)));
     this.registerEvent(this.app.vault.on("delete", (f) => this.untrackEdit(f)));
@@ -9189,6 +9210,7 @@ class WorkbenchPlugin extends Plugin {
   trackEdit(file) {
     try {
       if (!file || file.extension !== "md") return;
+      if (this._pendingRename && this._pendingRename.has(file.path)) return;
       const k = todayStr();
       if (!this._editFiles) this._editFiles = {};
       if (!this._editFiles[k]) this._editFiles[k] = new Set();
@@ -9272,6 +9294,7 @@ class WorkbenchPlugin extends Plugin {
     let total = 0, newMonth = 0, newWeek = 0, newQuarter = 0, newYear = 0, orphan = 0;
     const dayHist = new Map();
     const _elog = this.settings.editLog || {};
+    const _mlog = this.settings.movedLog || {};
     const propKeys = new Set();
     const activeDates = new Set();
     const tags = new Map();
@@ -9292,9 +9315,11 @@ class WorkbenchPlugin extends Plugin {
       const mt = file.stat.mtime;
       {
         const _hymd = ymdOf(mt);
-        dayHist.set(_hymd, (dayHist.get(_hymd) || 0) + 1);
+        if (!(_mlog[_hymd] || []).includes(file.path)) {
+          dayHist.set(_hymd, (dayHist.get(_hymd) || 0) + 1);
+          activeDates.add(_hymd);
+        }
       }
-      activeDates.add(ymdOf(mt));
       if (!hasOut.has(file.path) && !isTarget.has(file.path)) orphan++;
       const cache = this.app.metadataCache.getFileCache(file);
       if (cache && cache.frontmatter) for (const k of Object.keys(cache.frontmatter)) propKeys.add(String(k).trim());
@@ -9324,6 +9349,7 @@ class WorkbenchPlugin extends Plugin {
       const _wkF = new Set(), _mF = new Set(), _qF = new Set(), _yF = new Set();
       for (const file of files) {
         const _mt = file.stat.mtime;
+        if ((_mlog[ymdOf(_mt)] || []).includes(file.path)) continue;
         if (_mt >= yearStart) _yF.add(file.path);
         if (_mt >= quarterStart) _qF.add(file.path);
         if (_mt >= monthStart) _mF.add(file.path);
@@ -9332,7 +9358,8 @@ class WorkbenchPlugin extends Plugin {
       for (const [k, v] of Object.entries(_elog)) {
         if (!Array.isArray(v) || !v.length) continue;
         const _ms = new Date(k + "T00:00:00").getTime();
-        if (_ms >= yearStart) for (const p of v) _yF.add(p);
+        const _mv = _mlog[k] || [];
+        if (_ms >= yearStart) for (const p of v) if (!_mv.includes(p)) _yF.add(p);
         if (_ms >= quarterStart) for (const p of v) _qF.add(p);
         if (_ms >= monthStart) for (const p of v) _mF.add(p);
         if (_ms >= weekStart) for (const p of v) _wkF.add(p);
@@ -9342,7 +9369,7 @@ class WorkbenchPlugin extends Plugin {
     }
     return {
       totalNotes: total,
-      noteList: files.map(f => ({ p: f.path, m: f.stat.mtime })),
+      noteList: files.filter(f => !(_mlog[ymdOf(f.stat.mtime)] || []).includes(f.path)).map(f => ({ p: f.path, m: f.stat.mtime })),
       newThisMonth: newMonth,
       newThisWeek: newWeek,
       newThisQuarter: newQuarter,
