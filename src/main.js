@@ -687,19 +687,30 @@ class WorkbenchPlugin extends Plugin {
   }
 
   /* ---- 横幅统计（参考 apex-dashboard）---- */
-  /* 编辑日志：当天编辑次数 +1，防抖保存 */
+  /* 编辑日志：按"当天编辑过的笔记数"计数（同篇多次编辑只算 1 篇），防抖保存 */
   trackEdit(file) {
     try {
       if (!file || file.extension !== "md") return;
       const k = todayStr();
-      this.settings.editLog = this.settings.editLog || {};
-      this.settings.editLog[k] = (this.settings.editLog[k] || 0) + 1;
+      if (!this._editFiles) this._editFiles = {};
+      if (!this._editFiles[k]) this._editFiles[k] = new Set();
+      this._editFiles[k].add(file.path);
       if (this._editLogTimer) clearTimeout(this._editLogTimer);
-      this._editLogTimer = setTimeout(() => {
-        this._editLogTimer = null;
-        if (this.app && this.app.vault && this.app.vault.adapter) this.saveSettings();
-      }, 2000);
+      this._editLogTimer = setTimeout(() => this.saveEditLog(), 2000);
     } catch (e) { /* 静默：不影响编辑 */ }
+  }
+
+  /* 把按文件去重的集合落盘为当天笔记数；顺带清理过旧的天 */
+  saveEditLog() {
+    this._editLogTimer = null;
+    if (!this._editFiles) return;
+    this.settings.editLog = this.settings.editLog || {};
+    const now = new Date();
+    for (const [k, set] of Object.entries(this._editFiles)) {
+      if (set && set.size > 0) this.settings.editLog[k] = set.size;
+      if (k < todayStr()) delete this._editFiles[k]; // 非今天集合落盘后释放内存
+    }
+    if (this.app && this.app.vault && this.app.vault.adapter) this.saveSettings();
   }
 
   /* 清理编辑日志定时器 */
@@ -707,7 +718,7 @@ class WorkbenchPlugin extends Plugin {
     if (this._editLogTimer) {
       clearTimeout(this._editLogTimer);
       this._editLogTimer = null;
-      if (this.app && this.app.vault && this.app.vault.adapter) this.saveSettings();
+      this.saveEditLog();
     }
   }
 
