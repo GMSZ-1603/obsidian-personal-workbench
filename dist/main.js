@@ -9072,8 +9072,10 @@ class WorkbenchPlugin extends Plugin {
       }));
     });
 
-    // 编辑日志：每次编辑笔记 +1（持久化，用于热力图/活跃天数统计）
+    // 编辑日志：编辑/创建计入当天编辑篇数；删除从当天移除（附件非 md 天然排除）
     this.registerEvent(this.app.vault.on("modify", (f) => this.trackEdit(f)));
+    this.registerEvent(this.app.vault.on("create", (f) => this.trackEdit(f)));
+    this.registerEvent(this.app.vault.on("delete", (f) => this.untrackEdit(f)));
     this.addCommand({
       id: "open-workbench",
       name: "打开个人工作台",
@@ -9183,7 +9185,7 @@ class WorkbenchPlugin extends Plugin {
   }
 
   /* ---- 横幅统计（参考 apex-dashboard）---- */
-  /* 编辑日志：按"当天编辑过的笔记数"计数（同篇多次编辑只算 1 篇），防抖保存 */
+  /* 编辑日志：按"当天编辑过的笔记数"计数（同篇多次编辑只算 1 篇，创建也算；附件非 md 排除），防抖保存 */
   trackEdit(file) {
     try {
       if (!file || file.extension !== "md") return;
@@ -9207,6 +9209,19 @@ class WorkbenchPlugin extends Plugin {
       if (k < todayStr()) delete this._editFiles[k]; // 非今天集合落盘后释放内存
     }
     if (this.app && this.app.vault && this.app.vault.adapter) this.saveSettings();
+  }
+
+  /* 文件删除：若在当天集合中，则从当天计数移除 */
+  untrackEdit(file) {
+    try {
+      if (!file || file.extension !== "md") return;
+      const k = todayStr();
+      if (this._editFiles && this._editFiles[k] && this._editFiles[k].has(file.path)) {
+        this._editFiles[k].delete(file.path);
+        if (this._editLogTimer) clearTimeout(this._editLogTimer);
+        this._editLogTimer = setTimeout(() => this.saveEditLog(), 2000);
+      }
+    } catch (e) { /* 静默：不影响编辑 */ }
   }
 
   /* 清理编辑日志定时器 */
