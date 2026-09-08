@@ -8578,7 +8578,8 @@ const DEFAULT_SETTINGS = {
   restMode: "double",
   singleDay: "sun",
   sdStart: "double",
-  manualWeeks: {}
+  manualWeeks: {},
+  editLog: {}
 };
 
 /* ---------------- 通用工具 ---------------- */
@@ -9071,6 +9072,8 @@ class WorkbenchPlugin extends Plugin {
       }));
     });
 
+    // 编辑日志：每次编辑笔记 +1（持久化，用于热力图/活跃天数统计）
+    this.registerEvent(this.app.vault.on("modify", (f) => this.trackEdit(f)));
     this.addCommand({
       id: "open-workbench",
       name: "打开个人工作台",
@@ -9180,6 +9183,30 @@ class WorkbenchPlugin extends Plugin {
   }
 
   /* ---- 横幅统计（参考 apex-dashboard）---- */
+  /* 编辑日志：当天编辑次数 +1，防抖保存 */
+  trackEdit(file) {
+    try {
+      if (!file || file.extension !== "md") return;
+      const k = todayStr();
+      this.settings.editLog = this.settings.editLog || {};
+      this.settings.editLog[k] = (this.settings.editLog[k] || 0) + 1;
+      if (this._editLogTimer) clearTimeout(this._editLogTimer);
+      this._editLogTimer = setTimeout(() => {
+        this._editLogTimer = null;
+        if (this.app && this.app.vault && this.app.vault.adapter) this.saveSettings();
+      }, 2000);
+    } catch (e) { /* 静默：不影响编辑 */ }
+  }
+
+  /* 清理编辑日志定时器 */
+  flushEditLog() {
+    if (this._editLogTimer) {
+      clearTimeout(this._editLogTimer);
+      this._editLogTimer = null;
+      if (this.app && this.app.vault && this.app.vault.adapter) this.saveSettings();
+    }
+  }
+
   computeStats() {
     const vault = this.app.vault;
     const ex = (this.settings.excludeFolders || []).map(f => f.trim().toLowerCase()).filter(f => f && f !== "/");
@@ -9213,6 +9240,8 @@ class WorkbenchPlugin extends Plugin {
 
     let total = 0, newMonth = 0, newWeek = 0, orphan = 0;
     const dayHist = new Map();
+    const _elog = this.settings.editLog || {};
+    const _hasElog = Object.keys(_elog).length > 0;
     const propKeys = new Set();
     const activeDates = new Set();
     const tags = new Map();
@@ -9234,11 +9263,11 @@ class WorkbenchPlugin extends Plugin {
       const mt = file.stat.mtime;
       if (ct >= monthStart) newMonth++;
       if (ct >= weekStart) newWeek++;
-      if (mt >= histStart) {
+      if (!_hasElog && mt >= histStart) {
         const _hymd = ymdOf(mt);
         dayHist.set(_hymd, (dayHist.get(_hymd) || 0) + 1);
       }
-      activeDates.add(ymdOf(mt));
+      if (!_hasElog) activeDates.add(ymdOf(mt));
       if (!hasOut.has(file.path) && !isTarget.has(file.path)) orphan++;
       const cache = this.app.metadataCache.getFileCache(file);
       if (cache && cache.frontmatter) for (const k of Object.keys(cache.frontmatter)) propKeys.add(String(k).trim());
@@ -9255,6 +9284,15 @@ class WorkbenchPlugin extends Plugin {
       if (cache.listItems) for (const li of cache.listItems) {
         if (li.task !== undefined) { totalTasks++; if (li.task === "x" || li.task === "X") doneTasks++; }
       }
+    }
+    // 有编辑日志：以逐次编辑记录为准；无日志（首次启用）：用 mtime 分布回填
+    if (_hasElog) {
+      for (const [k, v] of Object.entries(_elog)) {
+        if (typeof v === "number" && v > 0) { dayHist.set(k, v); activeDates.add(k); }
+      }
+    } else if (dayHist.size > 0) {
+      this.settings.editLog = Object.fromEntries(dayHist);
+      if (this.app && this.app.vault && this.app.vault.adapter) this.saveSettings();
     }
     return {
       totalNotes: total,
@@ -9923,6 +9961,7 @@ class WorkbenchView extends ItemView {
   }
 
   async onClose() {
+    this.flushEditLog();
     if (this._heatRO) { this._heatRO.disconnect(); this._heatRO = null; }}
 
   async render() {
