@@ -599,7 +599,7 @@ class WorkbenchPlugin extends Plugin {
       }, 3000);
     }));
     this.registerEvent(this.app.vault.on("modify", (f) => this.trackEdit(f)));
-    this.registerEvent(this.app.vault.on("create", (f) => this.trackEdit(f)));
+    this.registerEvent(this.app.vault.on("create", (f) => { this.trackEdit(f); this._impEnqueue(f); }));
     this.registerEvent(this.app.vault.on("delete", (f) => this.untrackEdit(f)));
     this.addCommand({
       id: "open-workbench",
@@ -609,6 +609,9 @@ class WorkbenchPlugin extends Plugin {
     this.addRibbonIcon("layout-dashboard", "打开个人工作台", () => this.openWorkbenchView());
 
     this.addSettingTab(new WorkbenchSettingTab(this.app, this));
+
+    // 导入识别：启动时回溯今天批量导入（同目录同小时>=50篇），排除其编辑计数
+    this._backfillImport();
   }
 
   /* 恢复持久化的天气缓存（重启不重复请求）*/
@@ -711,6 +714,66 @@ class WorkbenchPlugin extends Plugin {
 
   /* ---- 横幅统计（参考 apex-dashboard）---- */
   /* 编辑日志：按"当天编辑过的笔记数"计数（同篇多次编辑只算 1 篇，创建也算；附件非 md 排除），防抖保存 */
+  /* ---- 导入识别：外部批量导入的笔记不计入编辑计数 ---- */
+  _impEnqueue(file) {
+    if (!file || file.extension !== "md") return;
+    this._impQueue = this._impQueue || [];
+    this._impQueue.push({ p: file.path, d: (file.path.split("/")[0] || "~"), t: Date.now() });
+    if (this._impQueue.length > 5000) this._impQueue = this._impQueue.slice(-2000);
+    if (this._impTimer) clearTimeout(this._impTimer);
+    this._impTimer = setTimeout(() => this._sweepImport(), 15000);
+  }
+  /* 滑动清点：同目录 10 分钟窗口内 create >= 30 判定为批量导入 */
+  _sweepImport() {
+    this._impTimer = null;
+    const q = this._impQueue || [];
+    const cutoff = Date.now() - 10 * 60000;
+    const cnt = {};
+    for (const e of q) if (e.t >= cutoff) cnt[e.d] = (cnt[e.d] || 0) + 1;
+    let marked = false;
+    for (const [dir, n] of Object.entries(cnt)) {
+      if (n >= 30) for (const e of q) if (e.t >= cutoff && e.d === dir && !e.done) { e.done = true; this._markImport(e.p); marked = true; }
+    }
+    this._impQueue = q.filter(e => e.t >= cutoff && !e.done);
+    if (marked) { this.saveSettings(); this.saveEditLog(); }
+  }
+  /* 标记导入文件：记入 importLog（供统计排除）并从当天编辑集合回滚 */
+  _markImport(p) {
+    const k = todayStr();
+    this.settings.importLog = this.settings.importLog || {};
+    const arr = this.settings.importLog[k] || (this.settings.importLog[k] = []);
+    if (!arr.includes(p)) arr.push(p);
+    if (this._editFiles && this._editFiles[k]) this._editFiles[k].delete(p);
+  }
+  /* 启动回溯：今天 mtime 的文件，同目录同小时 >= 50 篇判定为批量导入（覆盖历史已计入） */
+  async _backfillImport() {
+    try {
+      const k = todayStr();
+      const start = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
+      const agg = {}, byKey = {};
+      for (const f of this.app.vault.getMarkdownFiles()) {
+        if (f.stat.mtime < start) continue;
+        const h = new Date(f.stat.mtime).getHours();
+        const dir = f.path.split("/")[0] || "~";
+        const key = dir + "|" + h;
+        agg[key] = (agg[key] || 0) + 1;
+        (byKey[key] = byKey[key] || []).push(f.path);
+      }
+      let marked = false;
+      for (const [key, n] of Object.entries(agg)) if (n >= 50) { for (const p of byKey[key]) this._markImport(p); marked = true; }
+      if (marked) {
+        const el = this.settings.editLog || {};
+        if (Array.isArray(el[k])) {
+          const il = this.settings.importLog[k] || [];
+          const nv = el[k].filter(p => !il.includes(p));
+          if (nv.length !== el[k].length) el[k] = nv;
+        }
+        await this.saveSettings();
+        this.saveEditLog();
+      }
+    } catch (e) { /* 静默 */ }
+  }
+
   trackEdit(file) {
     try {
       if (!file || file.extension !== "md") return;
@@ -799,6 +862,7 @@ class WorkbenchPlugin extends Plugin {
     const dayHist = new Map();
     const _elog = this.settings.editLog || {};
     const _mlog = this.settings.movedLog || {};
+    const _ilog = this.settings.importLog || {};
     const propKeys = new Set();
     const activeDates = new Set();
     const tags = new Map();
@@ -819,7 +883,7 @@ class WorkbenchPlugin extends Plugin {
       const mt = file.stat.mtime;
       {
         const _hymd = ymdOf(mt);
-        if (!(_mlog[_hymd] || []).includes(file.path)) {
+        if (!(_mlog[_hymd] || []).includes(file.path) && !(_ilog[_hymd] || []).includes(file.path)) {
           dayHist.set(_hymd, (dayHist.get(_hymd) || 0) + 1);
           activeDates.add(_hymd);
         }
@@ -853,7 +917,7 @@ class WorkbenchPlugin extends Plugin {
       const _wkF = new Set(), _mF = new Set(), _qF = new Set(), _yF = new Set();
       for (const file of files) {
         const _mt = file.stat.mtime;
-        if ((_mlog[ymdOf(_mt)] || []).includes(file.path)) continue;
+        if ((_mlog[ymdOf(_mt)] || []).includes(file.path) || (_ilog[ymdOf(_mt)] || []).includes(file.path)) continue;
         if (_mt >= yearStart) _yF.add(file.path);
         if (_mt >= quarterStart) _qF.add(file.path);
         if (_mt >= monthStart) _mF.add(file.path);
@@ -862,7 +926,7 @@ class WorkbenchPlugin extends Plugin {
       for (const [k, v] of Object.entries(_elog)) {
         if (!Array.isArray(v) || !v.length) continue;
         const _ms = new Date(k + "T00:00:00").getTime();
-        const _mv = _mlog[k] || [];
+        const _mv = [...(_mlog[k] || []), ...(_ilog[k] || [])];
         if (_ms >= yearStart) for (const p of v) if (!_mv.includes(p)) _yF.add(p);
         if (_ms >= quarterStart) for (const p of v) _qF.add(p);
         if (_ms >= monthStart) for (const p of v) _mF.add(p);
@@ -873,7 +937,7 @@ class WorkbenchPlugin extends Plugin {
     }
     return {
       totalNotes: total,
-      noteList: files.filter(f => !(_mlog[ymdOf(f.stat.mtime)] || []).includes(f.path)).map(f => ({ p: f.path, m: f.stat.mtime })),
+      noteList: files.filter(f => !(_mlog[ymdOf(f.stat.mtime)] || []).includes(f.path) && !(_ilog[ymdOf(f.stat.mtime)] || []).includes(f.path)).map(f => ({ p: f.path, m: f.stat.mtime })),
       newThisMonth: newMonth,
       newThisWeek: newWeek,
       newThisQuarter: newQuarter,
