@@ -9198,14 +9198,18 @@ class WorkbenchPlugin extends Plugin {
     } catch (e) { /* 静默：不影响编辑 */ }
   }
 
-  /* 把按文件去重的集合落盘为当天笔记数；顺带清理过旧的天 */
+  /* 把按文件去重的集合落盘：本月内存文件列表（供本周/本月去重统计），历史日期存数字（压缩体积） */
   saveEditLog() {
     this._editLogTimer = null;
     if (!this._editFiles) return;
     this.settings.editLog = this.settings.editLog || {};
     const now = new Date();
+    const mStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     for (const [k, set] of Object.entries(this._editFiles)) {
-      if (set && set.size > 0) this.settings.editLog[k] = set.size;
+      if (!set || set.size === 0) continue;
+      const ms = new Date(k + "T00:00:00").getTime();
+      if (ms >= mStart) this.settings.editLog[k] = [...set]; // 本月：文件路径列表（去重统计用）
+      else this.settings.editLog[k] = set.size;              // 历史：仅篇数（压缩）
       if (k < todayStr()) delete this._editFiles[k]; // 非今天集合落盘后释放内存
     }
     if (this.app && this.app.vault && this.app.vault.adapter) this.saveSettings();
@@ -9306,16 +9310,28 @@ class WorkbenchPlugin extends Plugin {
         if (li.task !== undefined) { totalTasks++; if (li.task === "x" || li.task === "X") doneTasks++; }
       }
     }
-    // 编辑日志有记录的日期，以逐次编辑计数覆盖 mtime 基线
+    // 编辑日志有记录的日期，以逐次编辑计数覆盖 mtime 基线（值可能是数字=篇数，或数组=文件列表）
     for (const [k, v] of Object.entries(_elog)) {
-      if (typeof v === "number" && v > 0) { dayHist.set(k, v); activeDates.add(k); }
+      if (v == null) continue;
+      const n = Array.isArray(v) ? v.length : (typeof v === "number" ? v : 0);
+      if (n > 0) { dayHist.set(k, n); activeDates.add(k); }
     }
-    // 本周/本月编辑数：按热力图口径（dayHist 各天编辑篇数之和）
+    // 本周/本月编辑数：按"期间内编辑过的不同笔记数"（文件级去重：mtime 最后编辑 + 编辑日志文件列表）
     newMonth = 0; newWeek = 0;
-    for (const [k, v] of dayHist.entries()) {
-      const _ms = new Date(k + "T00:00:00").getTime();
-      if (_ms >= monthStart) newMonth += v;
-      if (_ms >= weekStart) newWeek += v;
+    {
+      const _wkF = new Set(), _mF = new Set();
+      for (const file of files) {
+        const _mt = file.stat.mtime;
+        if (_mt >= monthStart) _mF.add(file.path);
+        if (_mt >= weekStart) _wkF.add(file.path);
+      }
+      for (const [k, v] of Object.entries(_elog)) {
+        if (!Array.isArray(v) || !v.length) continue;
+        const _ms = new Date(k + "T00:00:00").getTime();
+        if (_ms >= monthStart) for (const p of v) _mF.add(p);
+        if (_ms >= weekStart) for (const p of v) _wkF.add(p);
+      }
+      newMonth = _mF.size; newWeek = _wkF.size;
     }
     return {
       totalNotes: total,
