@@ -8501,7 +8501,7 @@
  * 依赖：上方已拼接的 lunar-javascript（captured as lunarLib）
  * ===================================================================== */
 const lunarLib = module.exports; // captured from lunar-javascript UMD bundle
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Component, ItemView } = require("obsidian");
+const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Component, ItemView, setIcon } = require("obsidian");
 
 const VIEW_TYPE_WORKBENCH = "personal-workbench-view";
 
@@ -9317,58 +9317,76 @@ class WorkbenchPlugin extends Plugin {
       .sort((a, b) => fmtDate(a.solar.y, a.solar.m, a.solar.d).localeCompare(fmtDate(b.solar.y, b.solar.m, b.solar.d)))
       .slice(0, 6);
 
-    /* ===== 横幅：统计（参考 apex-dashboard） ===== */
+    /* ===== 横幅：统计（移植 apex-dashboard 的 dashboard-banner-stats） ===== */
     if (this.settings.bannerEnabled) {
       const stats = this.computeStats();
       const banner = root.createDiv({ cls: "wb-banner" });
+      const bs = banner.createDiv({ cls: "dashboard-banner-stats" });
+      const L_ICONS = { totalNotes: "file-text", tagsCount: "hash", totalLinks: "link", newThisMonth: "calendar-plus", newThisWeek: "calendar-check", totalTasks: "list-checks", doneTasks: "check-check", pendingTasks: "circle-dashed" };
+      const R_ICONS = { taskCompletion: "list-checks", connectivity: "network", orphanRate: "circle-slash", avgLinksPerNote: "link" };
+      const R_LABELS = { taskCompletion: "任务完成率", connectivity: "连通度", orphanRate: "孤立率", avgLinksPerNote: "链接/篇" };
+      const _setIcon = (el, name) => { try { setIcon(el, name); } catch (_e) {} };
 
-      /* 左侧：总笔记 / 本月 / 标签 / 链接 */
-      const left = banner.createDiv({ cls: "wb-banner-left" });
-      const hero = left.createDiv({ cls: "wb-bs-hero" });
-      hero.createEl("b", { text: String(stats.totalNotes) });
-      hero.createSpan({ text: "总笔记" });
-      const strip = left.createDiv({ cls: "wb-bs-strip" });
-      const mk = (v, l) => { const d = strip.createDiv({ cls: "wb-bs" }); d.createEl("b", { text: v }); d.createSpan({ text: l }); };
-      mk(`本月+${stats.newThisMonth}`, "新增");
-      mk(`#${stats.tagsCount}`, "标签");
-      mk(String(stats.totalLinks), "链接");
+      /* 左栏：图标 + 大数字 + 底部三行小指标 */
+      const left = bs.createDiv({ cls: "dashboard-banner-stat-col dashboard-banner-stat-col--left" });
+      const topL = left.createDiv({ cls: "dashboard-banner-stat-top" });
+      const heroL = topL.createDiv({ cls: "dashboard-banner-stat-hero" });
+      const iconL = heroL.createDiv({ cls: "dashboard-banner-stat-icon" });
+      _setIcon(iconL, L_ICONS.totalNotes);
+      heroL.createEl("span", { cls: "dashboard-banner-stat-num", text: String(stats.totalNotes) });
+      heroL.createDiv({ cls: "dashboard-banner-stat-label dashboard-banner-stat-label--inline", text: "总笔记" });
+      const stripL = left.createDiv({ cls: "dashboard-banner-stat-strip" });
+      const mkStrip = (icon, text) => {
+        const it = stripL.createDiv({ cls: "dashboard-banner-stat-strip-item" });
+        const ic = it.createDiv({ cls: "dashboard-banner-stat-strip-icon" });
+        _setIcon(ic, icon);
+        it.createSpan({ text });
+      };
+      mkStrip("calendar-plus", `本月+${stats.newThisMonth}`);
+      mkStrip("hash", `${stats.tagsCount}标签`);
+      mkStrip("link", `${stats.totalLinks}链接`);
 
-      /* 中间：连续活跃天数 + 本周/本月发文（居中）+ 活动点阵（占满中间栏） */
-      const mid = banner.createDiv({ cls: "wb-banner-mid" });
-      const streakRow = mid.createDiv({ cls: "wb-bs-streak" });
-      const s1 = streakRow.createDiv({ cls: "s1" });
-      s1.createEl("b", { text: String(stats.streak) + "天" });
-      s1.createSpan({ text: "活跃天数" });
-      streakRow.createDiv({ cls: "s2", text: `本周${stats.newThisWeek}篇 · 本月${stats.newThisMonth}篇` });
-      const hm = mid.createDiv({ cls: "wb-bs-heatmap" });
-      // 3 行 × 33 列 = 99 格（近 98 天活跃 + 1 空位），时间从左上到右下连续流动
-      for (let i = 0; i < 99; i++) {
-        const v = i < stats.activity.length ? stats.activity[i] : 0;
-        hm.createDiv({ cls: "wb-bs-dot" + (v > 0 ? (v >= 4 ? " l4" : v >= 2 ? " l3" : " l2") : " l0") });
+      /* 中栏：图标 + 活跃天数 + 副标题 + 热力图（auto-fill 自动换行成 3 行） */
+      const mid = bs.createDiv({ cls: "dashboard-banner-stat-col dashboard-banner-stat-col--center" });
+      const topM = mid.createDiv({ cls: "dashboard-banner-stat-top" });
+      const heroM = topM.createDiv({ cls: "dashboard-banner-stat-hero" });
+      const iconM = heroM.createDiv({ cls: "dashboard-banner-stat-icon" });
+      _setIcon(iconM, "flame");
+      heroM.createEl("span", { cls: "dashboard-banner-stat-num", text: `${stats.streak}天` });
+      heroM.createDiv({ cls: "dashboard-banner-stat-label dashboard-banner-stat-label--inline", text: "活跃天数" });
+      mid.createDiv({ cls: "dashboard-banner-stat-sub", text: `本周${stats.newThisWeek}篇 · 本月${stats.newThisMonth}篇` });
+      const chart = mid.createDiv({ cls: "dashboard-banner-stat-chart" });
+      const hm = chart.createDiv({ cls: "dashboard-banner-heatmap" });
+      const _max = Math.max(1, ...stats.activity);
+      for (let a = 0; a < stats.activity.length; a++) {
+        const cell = hm.createDiv({ cls: "dashboard-banner-heatmap-cell" });
+        const r = stats.activity[a] / _max;
+        cell.addClass("dashboard-banner-heatmap-cell--l" + (stats.activity[a] <= 0 ? 0 : r <= 0.25 ? 1 : r <= 0.5 ? 2 : r <= 0.75 ? 3 : 4));
+        if (a === stats.activity.length - 1) cell.addClass("dashboard-banner-heatmap-cell--today");
       }
 
-      /* 右侧：任务完成率 / 连通度 / 孤立率 / 链接每篇 */
-      const right = banner.createDiv({ cls: "wb-banner-right" });
-      const metrics = [
-        ["任务完成率", stats.taskCompletion],
-        ["连通度", stats.connectivity],
-        ["孤立率", stats.orphanRate],
-        ["链接/篇", stats.avgLinksPerNote]
+      /* 右栏：4 个进度指标（名称+值+进度条） */
+      const right = bs.createDiv({ cls: "dashboard-banner-stat-col dashboard-banner-stat-col--right" });
+      const R_ROWS = [
+        ["taskCompletion", `${stats.taskCompletion}%`, stats.taskCompletion],
+        ["connectivity", `${stats.connectivity}%`, stats.connectivity],
+        ["orphanRate", `${stats.orphanRate}%`, stats.orphanRate],
+        ["avgLinksPerNote", stats.avgLinksPerNote.toFixed(1), Math.min(100, Math.round(stats.avgLinksPerNote / 3 * 100))]
       ];
-      metrics.forEach(([label, val]) => {
-        const m = right.createDiv({ cls: "wb-bs-metric" });
-        m.createSpan({ cls: "wb-bs-mlabel", text: label });
-        const text = typeof val === "number" && !Number.isInteger(val) ? val.toFixed(1) : String(Math.round(val));
-        m.createEl("b", { text });
-        if (label !== "链接/篇") {
-          const bar = m.createDiv({ cls: "wb-bs-bar" });
-          const fill = bar.createDiv({ cls: "wb-bs-fill" });
-          fill.style.width = Math.min(100, Math.max(0, val)) + "%";
-        }
+      R_ROWS.forEach(([key, val, pct]) => {
+        const pr = right.createDiv({ cls: "dashboard-banner-stat-prog" });
+        const head = pr.createDiv({ cls: "dashboard-banner-stat-prog-head" });
+        const title = head.createDiv({ cls: "dashboard-banner-stat-prog-title" });
+        const ic = title.createDiv({ cls: "dashboard-banner-stat-prog-icon" });
+        _setIcon(ic, R_ICONS[key]);
+        title.createSpan({ text: R_LABELS[key] });
+        head.createDiv({ cls: "dashboard-banner-stat-prog-val", text: val });
+        const track = pr.createDiv({ cls: "dashboard-banner-stat-prog-track" });
+        track.createDiv({ cls: "dashboard-banner-stat-prog-fill" }).style.width = `${pct}%`;
       });
     }
 
-    /* ===== 查询栏 ===== */
+        /* ===== 查询栏 ===== */
     if (this.settings.queryEnabled) {
       this.renderQueryBar(root);
     }

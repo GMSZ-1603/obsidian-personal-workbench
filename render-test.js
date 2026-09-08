@@ -185,11 +185,11 @@ const app = {
   check("连通度", bannerText.includes("连通度"));
   check("孤立率", bannerText.includes("孤立率"));
   check("链接/篇", bannerText.includes("链接/篇"));
-  const dots = el.querySelectorAll(".wb-bs-dot");
-  check("活动点阵99格", dots.length === 99, "got " + dots.length);
-  const hero = banner && banner.querySelector(".wb-bs-hero");
-  const heroB = hero && hero.children.find(c => c.tag === "b");
-  check("总笔记数>0", !!heroB && parseInt(heroB.textContent) > 0, heroB && heroB.textContent);
+  const dots = el.querySelectorAll(".dashboard-banner-heatmap-cell");
+  check("活动点阵98格", dots.length === 98, "got " + dots.length);
+  const numL = banner && banner.querySelector(".dashboard-banner-stat-num");
+  check("总笔记数>0", !!numL && parseInt(numL.textContent) > 0, numL && numL.textContent);
+  check("热力图today标记", !!el.querySelector(".dashboard-banner-heatmap-cell--today"));
 
   console.log("== 查询栏 ==");
   check("查询栏存在", !!el.querySelector(".wb-querybar"));
@@ -241,11 +241,14 @@ const app = {
 
   console.log("== 左栏任务统计 ==");
   // 注入 mock 任务（含今日/逾期/后续）验证左栏三板块
+  // 今日日期字符串（动态，避免 mock 日期随系统日期漂移）
+  const _todayS = new Date();
+  const todayStr = `${_todayS.getFullYear()}-${String(_todayS.getMonth() + 1).padStart(2, "0")}-${String(_todayS.getDate()).padStart(2, "0")}`;
   plugin.getTasks = async () => [
-    { file: "工作/a.md", text: "上午9点，制定扩容方案", raw: "", done: false, scheduled: "2026-09-07", due: null, date: "2026-09-07" },
-    { file: "工作/b.md", text: "上午8点半，设备归还入库", raw: "", done: false, scheduled: "2026-09-07", due: null, date: "2026-09-07" },
-    { file: "工作/c.md", text: "下午1点，整理成本清单", raw: "", done: false, scheduled: "2026-09-07", due: null, date: "2026-09-07" },
-    { file: "工作/d.md", text: "已完成的今日任务", raw: "", done: true, scheduled: "2026-09-07", due: null, date: "2026-09-07" },
+    { file: "工作/a.md", text: "上午9点，制定扩容方案", raw: "", done: false, scheduled: todayStr, due: null, date: todayStr },
+    { file: "工作/b.md", text: "上午8点半，设备归还入库", raw: "", done: false, scheduled: todayStr, due: null, date: todayStr },
+    { file: "工作/c.md", text: "下午1点，整理成本清单", raw: "", done: false, scheduled: todayStr, due: null, date: todayStr },
+    { file: "工作/d.md", text: "已完成的今日任务", raw: "", done: true, scheduled: todayStr, due: null, date: todayStr },
     { file: "工作/e.md", text: "逾期任务A", raw: "", done: false, scheduled: "2026-08-01", due: null, date: "2026-08-01" },
     { file: "工作/f.md", text: "逾期任务B", raw: "", done: false, scheduled: "2026-07-05", due: null, date: "2026-07-05" },
     { file: "工作/g.md", text: "逾期任务C", raw: "", done: false, scheduled: "2026-08-17", due: null, date: "2026-08-17" },
@@ -254,7 +257,7 @@ const app = {
     { file: "工作/j.md", text: "逾期任务F", raw: "", done: false, scheduled: "2026-07-31", due: null, date: "2026-07-31" },
     { file: "工作/k.md", text: "后续任务X", raw: "", done: false, scheduled: "2026-10-01", due: null, date: "2026-10-01" },
     { file: "工作/l.md", text: "后续任务Y", raw: "", done: false, scheduled: "2026-11-01", due: null, date: "2026-11-01" },
-    { file: "工作/m.md", text: "截止任务", raw: "", done: false, scheduled: null, due: "2026-09-07", date: "2026-09-07" }
+    { file: "工作/m.md", text: "截止任务", raw: "", done: false, scheduled: null, due: todayStr, date: todayStr }
   ];
   await plugin.renderDashboard(el, null, state);
   const _taskCard = [...el.querySelectorAll(".wb-card")].find(c => {
@@ -296,7 +299,7 @@ const app = {
   console.log("== 轮休(单双) ==");
   plugin.settings.restMode = "single-double";
   plugin.settings.singleDay = "sun";
-  plugin.settings.sdStart = "single"; // 本周(2026-09-07, W37)单休，周日休
+  plugin.settings.sdStart = "single"; // 本周(todayStr, W37)单休，周日休
   await plugin.renderDashboard(el, null, state);
   const cells2 = el.querySelectorAll(".wb-day");
   const cl = (i) => cells2[i].className || "";
@@ -329,14 +332,14 @@ const app = {
 
   console.log("== 勾选写回 ==");
   const tmpPath = "工作/__wb_test_toggle.md";
-  const tmpContent = "- [ ] 测试任务A 📅 2026-09-07\n- [ ] 测试任务B 📅 2026-09-07\n";
+  const tmpContent = "- [ ] 测试任务A 📅 todayStr\n- [ ] 测试任务B 📅 todayStr\n";
   const _origGet = app.vault.getAbstractFileByPath;
   const _origRead = app.vault.cachedRead;
   app.vault.getAbstractFileByPath = (p) => p === tmpPath ? { path: tmpPath, extension: "md" } : _origGet(p);
   app.vault.cachedRead = async (file) => file.path === tmpPath ? tmpContent : _origRead(file);
   let _processed = null;
   app.vault.process = async (file, fn) => { _processed = { path: file.path, out: fn() }; };
-  await plugin.toggleTaskComplete({ file: tmpPath, raw: "测试任务A 📅 2026-09-07", done: false, scheduled: "2026-09-07", due: null, date: "2026-09-07" });
+  await plugin.toggleTaskComplete({ file: tmpPath, raw: "测试任务A 📅 todayStr", done: false, scheduled: todayStr, due: null, date: todayStr });
   check("勾选写回[x]", _processed && _processed.out.includes("- [x] 测试任务A"), _processed && _processed.out);
   check("不误改其他行", _processed && _processed.out.includes("- [ ] 测试任务B"), _processed && _processed.out);
   app.vault.getAbstractFileByPath = _origGet;
@@ -360,7 +363,7 @@ const app = {
     _qwCalls.push(url);
     if (url.includes("/now")) return { status: 200, json: { code: "200", now: { temp: "28", feelsLike: "31", humidity: "77", windSpeed: "18", icon: "104", text: "阴" } } };
     return { status: 200, json: { code: "200", daily: [
-      { fxDate: "2026-09-07", iconDay: "101", textDay: "多云", tempMax: "29", tempMin: "24" },
+      { fxDate: "todayStr", iconDay: "101", textDay: "多云", tempMax: "29", tempMin: "24" },
       { fxDate: "2026-09-08", iconDay: "300", textDay: "阵雨", tempMax: "28", tempMin: "23" },
       { fxDate: "2026-09-09", iconDay: "104", textDay: "阴", tempMax: "27", tempMin: "22" },
       { fxDate: "2026-09-10", iconDay: "101", textDay: "多云", tempMax: "28", tempMin: "22" },
@@ -381,7 +384,7 @@ const app = {
   check("和风预报字段映射", _qw.list[0].max === 29 && _qw.list[0].code === "101" && _qw.list[1].code === "300", JSON.stringify(_qw.list[0]));
   check("和风阵雨emoji", _T2.QW_ICONS["300"][1].length > 0, _T2.QW_ICONS["300"].join("/"));
   const _omCalls = [];
-  const _mockOm = async ({ url }) => { _omCalls.push(url); return { status: 200, json: { current: { temperature_2m: 30, apparent_temperature: 33, relative_humidity_2m: 69, weather_code: 3, wind_speed_10m: 6 }, daily: { time: ["2026-09-07"], weather_code: [3], temperature_2m_max: [29], temperature_2m_min: [24] } } }; };
+  const _mockOm = async ({ url }) => { _omCalls.push(url); return { status: 200, json: { current: { temperature_2m: 30, apparent_temperature: 33, relative_humidity_2m: 69, weather_code: 3, wind_speed_10m: 6 }, daily: { time: ["todayStr"], weather_code: [3], temperature_2m_max: [29], temperature_2m_min: [24] } } }; };
   const _om = await _T2.fetchWeather({ latitude: 31.77, longitude: 119.97, qweatherKey: "" }, _mockOm);
   check("无key回退Open-Meteo", _omCalls[0].startsWith("https://api.open-meteo.com"), _omCalls[0]);
   check("Open-Meteo温度正常", _om.temp === 30, String(_om.temp));
@@ -498,7 +501,7 @@ const app = {
   plugin.saveSettings = async () => { _saved.push(plugin.settings._wc ? "wc" : null, plugin.settings._ec ? "ec" : null); };
   const _mockCacheReq = async ({ url }) => url.includes("/now")
     ? { status: 200, json: { code: "200", now: { temp: "28", feelsLike: "31", humidity: "77", windSpeed: "18", icon: "104", text: "阴" } } }
-    : { status: 200, json: { code: "200", daily: [{ fxDate: "2026-09-07", iconDay: "101", textDay: "多云", tempMax: "29", tempMin: "24" }] } };
+    : { status: 200, json: { code: "200", daily: [{ fxDate: "todayStr", iconDay: "101", textDay: "多云", tempMax: "29", tempMin: "24" }] } };
   plugin.getWeather = async () => { const d = await _T3.fetchWeather({ latitude: 31.77, longitude: 119.97, qweatherKey: "", qweatherHost: "x" }, _mockCacheReq); return d; };
   // 重新 new 一个实例验证持久化恢复（缓存未过期不请求）
   const plugin2 = new WB(app, {});

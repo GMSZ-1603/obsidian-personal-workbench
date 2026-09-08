@@ -31,4 +31,6 @@ class FakeElForView {
   createDiv(opts) { const e = new FakeElForView(); if (opts && opts.cls) e._cls.add(opts.cls); this.children.push(e); return e; }
   setAttribute() {}
 }
-module.exports = { Plugin, PluginSettingTab, Setting, Notice, requestUrl: async () => ({}), Component, ItemView };
+function setIcon() {}
+
+module.exports = { Plugin, PluginSettingTab, Setting, Notice, requestUrl: async () => ({}), Component, ItemView, setIcon };
