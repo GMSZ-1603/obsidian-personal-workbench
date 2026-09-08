@@ -302,7 +302,9 @@ const app = {
   }
   const _dueRow = _todayList ? [..._todayList.querySelectorAll(".wb-task")].find(r => r.querySelector(".wb-task-txt") && r.querySelector(".wb-task-txt").textContent.includes("截止任务")) : null;
   const _dueDate = _dueRow ? _dueRow.querySelector(".wb-task-date") : null;
-  check("due日期红色标记", !!_dueDate && _dueDate.className.includes("wb-due"), _dueDate && _dueDate.className);
+  check("due日期红色标记", !!_dueDate && !_dueDate.className.includes("wb-due"), _dueDate && _dueDate.className);
+  const _dueTxt = _dueRow ? _dueRow.querySelector(".wb-task-txt") : null;
+  check("due任务名红色类", !!_dueTxt && _dueTxt.className.includes("wb-task-txt--due"), _dueTxt && _dueTxt.className);
   const _schRow = _todayList ? [..._todayList.querySelectorAll(".wb-task")].find(r => r.querySelector(".wb-task-txt") && r.querySelector(".wb-task-txt").textContent.includes("上午8点半")) : null;
   const _schDate = _schRow ? _schRow.querySelector(".wb-task-date") : null;
   check("scheduled日期不加红色", !!_schDate && !_schDate.className.includes("wb-due"), _schDate && _schDate.className);

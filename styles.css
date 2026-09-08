@@ -264,11 +264,10 @@
 }
 .wb-task.wb-done { opacity: .55; }
 .wb-task.wb-done .wb-task-box { background: var(--wb-ok); border-color: var(--wb-ok); }
-.wb-task-txt { min-width: 0; flex: 1; word-break: break-word; }
-.wb-task-date { color: #c9d0de; font-size: 10px; flex-shrink: 0; margin-left: auto; text-align: right; white-space: nowrap; }
+.wb-task-txt { min-width: 0; flex: 1; word-break: break-word; color: #ffffff; }
+.wb-task-txt--due { color: var(--wb-danger); }
+.wb-task-date { color: #ffffff; font-size: 10px; flex-shrink: 0; margin-left: auto; text-align: right; white-space: nowrap; }
 .wb-task-flag { margin-right: 4px; }
-.wb-task.wb-overdue .wb-task-date { color: var(--wb-danger); }
-.wb-task-date.wb-due { color: var(--wb-danger); }
 .wb-task-src { font-size: 9px; color: #b6bfcf; width: 200px; flex-shrink: 0; margin-left: 6px; text-align: right; word-break: break-all; line-height: 1.5; }
 .wb-empty { font-size: 12px; color: var(--wb-muted); text-align: center; padding: 8px 0; }
 .wb-divider { height: 1px; background: var(--wb-line); margin: 12px 0 8px; }
@@ -336,7 +335,7 @@
   position: absolute; bottom: 5px; right: 6px; font-size: 9px; color: var(--wb-accent-2);
   background: color-mix(in srgb, var(--wb-accent-2) 14%, transparent); border-radius: 5px; padding: 1px 5px;
 }
-.wb-day-tcnt.wb-overdue { color: var(--wb-danger); background: color-mix(in srgb, var(--wb-danger) 16%, transparent); }
+.wb-day-tcnt.wb-overdue { background: color-mix(in srgb, var(--wb-danger) 14%, transparent); }
 .wb-day-bd { position: absolute; bottom: 5px; left: 6px; font-size: 8.5px; color: var(--wb-bday); max-width: 80%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- 选中日详情 ---------- */
