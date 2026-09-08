@@ -9284,8 +9284,6 @@ class WorkbenchPlugin extends Plugin {
     for (const file of files) {
       total++;
       const mt = file.stat.mtime;
-      if (mt >= monthStart) newMonth++;
-      if (mt >= weekStart) newWeek++;
       {
         const _hymd = ymdOf(mt);
         dayHist.set(_hymd, (dayHist.get(_hymd) || 0) + 1);
@@ -9311,6 +9309,13 @@ class WorkbenchPlugin extends Plugin {
     // 编辑日志有记录的日期，以逐次编辑计数覆盖 mtime 基线
     for (const [k, v] of Object.entries(_elog)) {
       if (typeof v === "number" && v > 0) { dayHist.set(k, v); activeDates.add(k); }
+    }
+    // 本周/本月编辑数：按热力图口径（dayHist 各天编辑篇数之和）
+    newMonth = 0; newWeek = 0;
+    for (const [k, v] of dayHist.entries()) {
+      const _ms = new Date(k + "T00:00:00").getTime();
+      if (_ms >= monthStart) newMonth += v;
+      if (_ms >= weekStart) newWeek += v;
     }
     return {
       totalNotes: total,
