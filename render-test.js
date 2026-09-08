@@ -113,9 +113,23 @@ function listMd(dir, base) {
   return out;
 }
 const files = listMd(VAULT);
+/* 模拟 vault.getAllLoadedFiles（TFile/TFolder） */
+function listAll(dir, base) {
+  const out = [];
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, ent.name);
+    const rel = path.join(base || "", ent.name).replace(/\\/g, "/");
+    if (ent.name === ".obsidian") continue;
+    if (ent.isDirectory()) { out.push({ path: rel, extension: undefined }); out.push(...listAll(full, rel)); }
+    else { const st = fs.statSync(full); out.push({ path: rel, extension: path.extname(ent.name).replace(".", "") || "md", stat: { ctime: st.ctimeMs, mtime: st.mtimeMs } }); }
+  }
+  return out;
+}
+const allFiles = listAll(VAULT);
 const app = {
   vault: {
     getMarkdownFiles: () => files,
+    getAllLoadedFiles: () => allFiles,
     cachedRead: async (f) => { try { return fs.readFileSync(path.join(VAULT, f.path), "utf8"); } catch (e) { return ""; } },
     getAbstractFileByPath: (p) => {
       const full = path.join(VAULT, p);
@@ -185,6 +199,9 @@ const app = {
   check("连通度", bannerText.includes("连通度"));
   check("孤立率", bannerText.includes("孤立率"));
   check("链接/篇", bannerText.includes("链接/篇"));
+  check("左栏附件", /\d+附件/.test(bannerText), bannerText);
+  check("左栏文件夹", /\d+文件夹/.test(bannerText), bannerText);
+  check("左栏属性", /\d+属性/.test(bannerText), bannerText);
   const dots = el.querySelectorAll(".dashboard-banner-heatmap-cell");
   check("活动点阵98格", dots.length === 98, "got " + dots.length);
   const numL = banner && banner.querySelector(".dashboard-banner-stat-num");

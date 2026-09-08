@@ -59,9 +59,22 @@ function listMd(dir, base) {
   return out;
 }
 const files = listMd(VAULT);
+function listAll(dir, base) {
+  const out = [];
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, ent.name);
+    const rel = path.join(base || "", ent.name).replace(/\\/g, "/");
+    if (ent.name === ".obsidian") continue;
+    if (ent.isDirectory()) { out.push({ path: rel, extension: undefined }); out.push(...listAll(full, rel)); }
+    else { out.push({ path: rel, extension: path.extname(ent.name).replace(".", "") || "md" }); }
+  }
+  return out;
+}
+const allFiles = listAll(VAULT);
 const app = {
   vault: {
     getMarkdownFiles: () => files,
+    getAllLoadedFiles: () => allFiles,
     cachedRead: async f => { try { return fs.readFileSync(path.join(VAULT, f.path), "utf8"); } catch (e) { return ""; } },
     getAbstractFileByPath: p => { const full = path.join(VAULT, p); if (fs.existsSync(full)) return { path: p.replace(/\\/g, "/"), extension: path.extname(p).replace(".", "") }; return null; }
   },

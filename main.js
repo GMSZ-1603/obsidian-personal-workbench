@@ -9188,6 +9188,20 @@ class WorkbenchPlugin extends Plugin {
       return ex.some(z => q === z || q.startsWith(z + "/"));
     };
     const files = vault.getMarkdownFiles().filter(f => !isEx(f.path) && !f.path.startsWith("."));
+    /* 附件/文件夹：Hearth Vault 卡片口径（非 md = 附件，非根目录 = 文件夹） */
+    let attachmentsCount = 0, foldersCount = 0;
+    const allFiles = typeof vault.getAllLoadedFiles === "function" ? vault.getAllLoadedFiles() : null;
+    if (allFiles) {
+      for (const f0 of allFiles) {
+        if (!f0 || !f0.path) continue;
+        if (f0.path === ".obsidian" || f0.path.startsWith(".obsidian/")) continue; // 全库口径（同 Hearth），仅排除系统目录
+        if (f0.extension === undefined || f0.extension === null || f0.extension === "") {
+          if (f0.path !== "/") foldersCount++;
+        } else if (String(f0.extension).toLowerCase() !== "md") {
+          attachmentsCount++;
+        }
+      }
+    }
 
     const now = new Date();
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -9200,6 +9214,7 @@ class WorkbenchPlugin extends Plugin {
 
     let total = 0, newMonth = 0, newWeek = 0, orphan = 0;
     const activity = new Array(US).fill(0);
+    const propKeys = new Set();
     const activeDates = new Set();
     const tags = new Map();
     const RL = this.app.metadataCache.resolvedLinks || {};
@@ -9228,6 +9243,7 @@ class WorkbenchPlugin extends Plugin {
       activeDates.add(ymdOf(mt));
       if (!hasOut.has(file.path) && !isTarget.has(file.path)) orphan++;
       const cache = this.app.metadataCache.getFileCache(file);
+      if (cache && cache.frontmatter) for (const k of Object.keys(cache.frontmatter)) propKeys.add(String(k).trim());
       if (!cache) continue;
       const addTags = list => {
         if (!list) return;
@@ -9247,6 +9263,9 @@ class WorkbenchPlugin extends Plugin {
       newThisMonth: newMonth,
       newThisWeek: newWeek,
       tagsCount: tags.size,
+      attachmentsCount,
+      foldersCount,
+      propsCount: propKeys.size,
       totalLinks,
       streak: calcStreak(activeDates),
       orphanRate: total ? Math.round(orphan / total * 100) : 0,
@@ -9342,9 +9361,10 @@ class WorkbenchPlugin extends Plugin {
         _setIcon(ic, icon);
         it.createSpan({ text });
       };
-      mkStrip("calendar-plus", `本月+${stats.newThisMonth}`);
-      mkStrip("hash", `${stats.tagsCount}标签`);
-      mkStrip("link", `${stats.totalLinks}链接`);
+      mkStrip("paperclip", `${stats.attachmentsCount}附件`);
+      mkStrip("folder", `${stats.foldersCount}文件夹`);
+      mkStrip("tag", `${stats.tagsCount}标签`);
+      mkStrip("braces", `${stats.propsCount}属性`);
 
       /* 中栏：图标 + 活跃天数 + 副标题 + 热力图（auto-fill 自动换行成 3 行） */
       const mid = bs.createDiv({ cls: "dashboard-banner-stat-col dashboard-banner-stat-col--center" });
