@@ -44,7 +44,7 @@ class FakeEl {
   createSpan(opts) { return this.createEl("span", opts); }
 }
 global.document = { createElement: t => new FakeEl(t), addEventListener() {}, contains: () => true };
-global.window = { setInterval: () => 1, clearInterval: () => {}, setTimeout: () => 1 };
+global.window = { clearInterval: () => {}, setTimeout: () => 1 };
 global.navigator = {};
 
 function listMd(dir, base) {

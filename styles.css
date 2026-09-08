@@ -108,7 +108,9 @@
   color: rgba(255, 255, 255, 0.62);
   line-height: 1.2;
 }
-.dashboard-banner-stat-strip-item { display: flex; align-items: center; gap: 4px; }
+.dashboard-banner-stat-strip-item { display: flex; align-items: center; gap: 6px; }
+.dashboard-banner-stat-strip-num { font-weight: 700; color: rgba(255,255,255,.92); }
+.dashboard-banner-stat-strip-txt { color: rgba(255,255,255,.55); }
 .dashboard-banner-stat-strip-icon {
   color: var(--banner-stat-accent);
   display: flex;
@@ -285,6 +287,7 @@
 .wb-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .wb-cal-title { font-size: 15px; font-weight: 700; }
 .wb-cal-subtitle { color: var(--wb-muted); font-weight: 400; margin-left: 8px; font-size: 11px; }
+.wb-cal-clock { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--wb-accent-2); letter-spacing: 1px; }
 .wb-cal-nav { display: flex; gap: 6px; }
 .wb-cal-nav button {
   background: var(--wb-card-2); border: 1px solid var(--wb-line); color: var(--wb-text);

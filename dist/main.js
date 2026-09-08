@@ -9355,16 +9355,17 @@ class WorkbenchPlugin extends Plugin {
       heroL.createEl("span", { cls: "dashboard-banner-stat-num", text: String(stats.totalNotes) });
       heroL.createDiv({ cls: "dashboard-banner-stat-label dashboard-banner-stat-label--inline", text: "总笔记" });
       const stripL = left.createDiv({ cls: "dashboard-banner-stat-strip" });
-      const mkStrip = (icon, text) => {
+      const mkStrip = (icon, num, label) => {
         const it = stripL.createDiv({ cls: "dashboard-banner-stat-strip-item" });
         const ic = it.createDiv({ cls: "dashboard-banner-stat-strip-icon" });
         _setIcon(ic, icon);
-        it.createSpan({ text });
+        it.createEl("b", { cls: "dashboard-banner-stat-strip-num", text: String(num) });
+        it.createSpan({ cls: "dashboard-banner-stat-strip-txt", text: label });
       };
-      mkStrip("paperclip", `${stats.attachmentsCount}附件`);
-      mkStrip("folder", `${stats.foldersCount}文件夹`);
-      mkStrip("tag", `${stats.tagsCount}标签`);
-      mkStrip("braces", `${stats.propsCount}属性`);
+      mkStrip("paperclip", stats.attachmentsCount, "附件");
+      mkStrip("folder", stats.foldersCount, "文件夹");
+      mkStrip("tag", stats.tagsCount, "标签");
+      mkStrip("braces", stats.propsCount, "属性");
 
       /* 中栏：图标 + 活跃天数 + 副标题 + 热力图（auto-fill 自动换行成 3 行） */
       const mid = bs.createDiv({ cls: "dashboard-banner-stat-col dashboard-banner-stat-col--center" });
@@ -9693,6 +9694,14 @@ class WorkbenchPlugin extends Plugin {
     const title = head.createDiv({ cls: "wb-cal-title" });
     title.textContent = `${state.year}年${state.month}月`;
     title.createSpan({ cls: "wb-cal-subtitle", text: `农历 ${t1.getYearInGanZhi()}年 · ${lunarMonthCn(t1.getMonth())}月` });
+    /* 中间：当前时间（时:分），每分钟刷新 */
+    const clock = head.createDiv({ cls: "wb-cal-clock" });
+    const _pad2 = n => String(n).padStart(2, "0");
+    const _tick = () => { const _d = new Date(); clock.textContent = `${_pad2(_d.getHours())}:${_pad2(_d.getMinutes())}`; };
+    _tick();
+    if (typeof window !== "undefined" && typeof window.setInterval === "function") {
+      try { const _tid = setInterval(_tick, 60000); if (typeof this.registerInterval === "function") this.registerInterval(_tid); else if (typeof this.register === "function") this.register(() => clearInterval(_tid)); } catch (_e) {}
+    }
     const nav = head.createDiv({ cls: "wb-cal-nav" });
     const mkBtn = (txt, fn) => {
       const b = nav.createEl("button", { text: txt });
@@ -9705,7 +9714,7 @@ class WorkbenchPlugin extends Plugin {
 
     // 图例
     const legend = card.createDiv({ cls: "wb-cal-legend" });
-    legend.createSpan({ text: "● 有任务", cls: "wb-lg-task" });
+    legend.createSpan({ text: "● 任务", cls: "wb-lg-task" });
     legend.createSpan({ text: "● 生日", cls: "wb-lg-bday" });
     legend.createSpan({ text: "● 节日", cls: "wb-lg-fest" });
     legend.createSpan({ text: "● 节气", cls: "wb-lg-term" });
