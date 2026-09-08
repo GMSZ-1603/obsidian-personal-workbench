@@ -9283,10 +9283,9 @@ class WorkbenchPlugin extends Plugin {
     let totalTasks = 0, doneTasks = 0;
     for (const file of files) {
       total++;
-      const ct = file.stat.ctime;
       const mt = file.stat.mtime;
-      if (ct >= monthStart) newMonth++;
-      if (ct >= weekStart) newWeek++;
+      if (mt >= monthStart) newMonth++;
+      if (mt >= weekStart) newWeek++;
       {
         const _hymd = ymdOf(mt);
         dayHist.set(_hymd, (dayHist.get(_hymd) || 0) + 1);
