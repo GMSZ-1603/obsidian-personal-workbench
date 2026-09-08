@@ -9359,6 +9359,8 @@ class WorkbenchPlugin extends Plugin {
     const _elog = this.settings.editLog || {};
     const _mlog = this.settings.movedLog || {};
     const _ilog = this.settings.importLog || {};
+    // 从未编辑（导入/空笔记）：创建时间与最后编辑时间一致（<=3s）的文件不计入编辑统计（Obsidian stat.ctime=创建时间）
+    const neverEdited = new Set(files.filter(f => Math.abs((f.stat.mtime || 0) - (f.stat.ctime || 0)) <= 3000).map(f => f.path));
     const propKeys = new Set();
     const activeDates = new Set();
     const tags = new Map();
@@ -9379,7 +9381,7 @@ class WorkbenchPlugin extends Plugin {
       const mt = file.stat.mtime;
       {
         const _hymd = ymdOf(mt);
-        if (!(_mlog[_hymd] || []).includes(file.path) && !(_ilog[_hymd] || []).includes(file.path)) {
+        if (!(_mlog[_hymd] || []).includes(file.path) && !(_ilog[_hymd] || []).includes(file.path) && !neverEdited.has(file.path)) {
           dayHist.set(_hymd, (dayHist.get(_hymd) || 0) + 1);
           activeDates.add(_hymd);
         }
@@ -9413,7 +9415,7 @@ class WorkbenchPlugin extends Plugin {
       const _wkF = new Set(), _mF = new Set(), _qF = new Set(), _yF = new Set();
       for (const file of files) {
         const _mt = file.stat.mtime;
-        if ((_mlog[ymdOf(_mt)] || []).includes(file.path) || (_ilog[ymdOf(_mt)] || []).includes(file.path)) continue;
+        if ((_mlog[ymdOf(_mt)] || []).includes(file.path) || (_ilog[ymdOf(_mt)] || []).includes(file.path) || neverEdited.has(file.path)) continue;
         if (_mt >= yearStart) _yF.add(file.path);
         if (_mt >= quarterStart) _qF.add(file.path);
         if (_mt >= monthStart) _mF.add(file.path);
@@ -9423,17 +9425,17 @@ class WorkbenchPlugin extends Plugin {
         if (!Array.isArray(v) || !v.length) continue;
         const _ms = new Date(k + "T00:00:00").getTime();
         const _mv = [...(_mlog[k] || []), ...(_ilog[k] || [])];
-        if (_ms >= yearStart) for (const p of v) if (!_mv.includes(p)) _yF.add(p);
-        if (_ms >= quarterStart) for (const p of v) _qF.add(p);
-        if (_ms >= monthStart) for (const p of v) _mF.add(p);
-        if (_ms >= weekStart) for (const p of v) _wkF.add(p);
+        if (_ms >= yearStart) for (const p of v) if (!_mv.includes(p) && !neverEdited.has(p)) _yF.add(p);
+        if (_ms >= quarterStart) for (const p of v) if (!_mv.includes(p) && !neverEdited.has(p)) _qF.add(p);
+        if (_ms >= monthStart) for (const p of v) if (!_mv.includes(p) && !neverEdited.has(p)) _mF.add(p);
+        if (_ms >= weekStart) for (const p of v) if (!_mv.includes(p) && !neverEdited.has(p)) _wkF.add(p);
       }
       newMonth = _mF.size; newWeek = _wkF.size;
       newQuarter = _qF.size; newYear = _yF.size;
     }
     return {
       totalNotes: total,
-      noteList: files.filter(f => !(_mlog[ymdOf(f.stat.mtime)] || []).includes(f.path) && !(_ilog[ymdOf(f.stat.mtime)] || []).includes(f.path)).map(f => ({ p: f.path, m: f.stat.mtime })),
+      noteList: files.filter(f => !(_mlog[ymdOf(f.stat.mtime)] || []).includes(f.path) && !(_ilog[ymdOf(f.stat.mtime)] || []).includes(f.path) && !neverEdited.has(f.path)).map(f => ({ p: f.path, m: f.stat.mtime })),
       newThisMonth: newMonth,
       newThisWeek: newWeek,
       newThisQuarter: newQuarter,

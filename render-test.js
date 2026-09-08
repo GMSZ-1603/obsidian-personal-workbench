@@ -107,7 +107,7 @@ function listMd(dir, base) {
     if (ent.isDirectory()) out.push(...listMd(full, rel));
     else if (ent.name.endsWith(".md")) {
       const st = fs.statSync(full);
-      out.push({ path: rel, basename: ent.name.replace(/\.md$/, ""), name: ent.name, extension: "md", stat: { ctime: st.ctimeMs, mtime: st.mtimeMs } });
+      out.push({ path: rel, basename: ent.name.replace(/\.md$/, ""), name: ent.name, extension: "md", stat: { ctime: st.birthtimeMs || st.ctimeMs, mtime: st.mtimeMs } });
     }
   }
   return out;
