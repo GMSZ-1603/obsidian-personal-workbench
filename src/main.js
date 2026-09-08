@@ -768,10 +768,12 @@ class WorkbenchPlugin extends Plugin {
     const now = new Date();
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1).getTime();
+    const yearStart = new Date(now.getFullYear(), 0, 1).getTime();
     const weekStart = dayStart - 6 * 86400000;
     // 统计策略：先按全部 md 笔记的最后编辑时间(mtime)建立基线，再用编辑日志按天覆盖
 
-    let total = 0, newMonth = 0, newWeek = 0, orphan = 0;
+    let total = 0, newMonth = 0, newWeek = 0, newQuarter = 0, newYear = 0, orphan = 0;
     const dayHist = new Map();
     const _elog = this.settings.editLog || {};
     const propKeys = new Set();
@@ -823,24 +825,31 @@ class WorkbenchPlugin extends Plugin {
     // 本周/本月编辑数：按"期间内编辑过的不同笔记数"（文件级去重：mtime 最后编辑 + 编辑日志文件列表）
     newMonth = 0; newWeek = 0;
     {
-      const _wkF = new Set(), _mF = new Set();
+      const _wkF = new Set(), _mF = new Set(), _qF = new Set(), _yF = new Set();
       for (const file of files) {
         const _mt = file.stat.mtime;
+        if (_mt >= yearStart) _yF.add(file.path);
+        if (_mt >= quarterStart) _qF.add(file.path);
         if (_mt >= monthStart) _mF.add(file.path);
         if (_mt >= weekStart) _wkF.add(file.path);
       }
       for (const [k, v] of Object.entries(_elog)) {
         if (!Array.isArray(v) || !v.length) continue;
         const _ms = new Date(k + "T00:00:00").getTime();
+        if (_ms >= yearStart) for (const p of v) _yF.add(p);
+        if (_ms >= quarterStart) for (const p of v) _qF.add(p);
         if (_ms >= monthStart) for (const p of v) _mF.add(p);
         if (_ms >= weekStart) for (const p of v) _wkF.add(p);
       }
       newMonth = _mF.size; newWeek = _wkF.size;
+      newQuarter = _qF.size; newYear = _yF.size;
     }
     return {
       totalNotes: total,
       newThisMonth: newMonth,
       newThisWeek: newWeek,
+      newThisQuarter: newQuarter,
+      newThisYear: newYear,
       tagsCount: tags.size,
       attachmentsCount,
       foldersCount,
@@ -955,7 +964,17 @@ class WorkbenchPlugin extends Plugin {
       _setIcon(iconM, "flame");
       heroM.createEl("span", { cls: "dashboard-banner-stat-num", text: `${stats.activeDays}天` });
       heroM.createDiv({ cls: "dashboard-banner-stat-label dashboard-banner-stat-label--inline", text: "活跃天数" });
-      mid.createDiv({ cls: "dashboard-banner-stat-sub", text: `本周${stats.newThisWeek}篇 · 本月${stats.newThisMonth}篇` });
+            const sub = mid.createDiv({ cls: "dashboard-banner-stat-sub" });
+      {
+        const _wd = (this._heatCols || DEFAULT_HEAT_COLS) * 3;
+        const _wStart = new Date();
+        _wStart.setHours(0, 0, 0, 0);
+        const _hsK = ymdOf(_wStart.getTime() - (_wd - 1) * 86400000);
+        let _heatN = 0;
+        if (stats.dayHist) for (const [k, v] of stats.dayHist.entries()) if (k >= _hsK) _heatN += v;
+        [["本周", stats.newThisWeek], ["本月", stats.newThisMonth], ["本季", stats.newThisQuarter], ["本年", stats.newThisYear], ["近" + _wd + "天", _heatN]]
+          .forEach(([l, n]) => sub.createSpan({ cls: "dashboard-banner-stat-sub-item", text: `${l}${n}篇` }));
+      }
       const chart = mid.createDiv({ cls: "dashboard-banner-stat-chart" });
       const hm = chart.createDiv({ cls: "dashboard-banner-heatmap" });
       this._lastStats = stats;
