@@ -131,7 +131,7 @@
 .dashboard-banner-stat-chart { margin-top: auto; width: 100%; display: flex; justify-content: center; }
 .dashboard-banner-heatmap {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 12px);
+  grid-template-columns: repeat(var(--heat-cols, 24), 12px);
   grid-auto-rows: 12px;
   gap: 4px;
   justify-content: center;

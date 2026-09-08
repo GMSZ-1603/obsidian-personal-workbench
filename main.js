@@ -8504,6 +8504,7 @@ const lunarLib = module.exports; // captured from lunar-javascript UMD bundle
 const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Component, ItemView, setIcon } = require("obsidian");
 
 const VIEW_TYPE_WORKBENCH = "personal-workbench-view";
+const DEFAULT_HEAT_COLS = 24; // 热力图默认列数（无测量宽度时）
 
 /* 法定节假日（来源：国务院办公厅《关于2026年部分节假日安排的通知》国办发明电〔2025〕7号）
  * 值 = 假日名（放假）；null = 调休上班日（周末补班）。2027 年起需按新年度通知更新。 */
@@ -9207,13 +9208,11 @@ class WorkbenchPlugin extends Plugin {
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     const weekStart = dayStart - 6 * 86400000;
-    const US = 98; // 14 周 × 7 天
-    const dow = (now.getDay() + 6) % 7; // 0=周一 .. 6=周日
-    const monday = dayStart - dow * 86400000; // 本周周一 00:00
-    const heatStart = monday - (US - 7) * 86400000; // 窗口起点 = 最早那周的周一
+    const MAX_HEAT_DAYS = 150; // 热力图可用最大天数（3 行 × 最多 50 列）
+    const histStart = dayStart - (MAX_HEAT_DAYS - 1) * 86400000; // 直方图起点（今天往前 150 天）
 
     let total = 0, newMonth = 0, newWeek = 0, orphan = 0;
-    const activity = new Array(US).fill(0);
+    const dayHist = new Map();
     const propKeys = new Set();
     const activeDates = new Set();
     const tags = new Map();
@@ -9235,10 +9234,9 @@ class WorkbenchPlugin extends Plugin {
       const mt = file.stat.mtime;
       if (ct >= monthStart) newMonth++;
       if (ct >= weekStart) newWeek++;
-      if (mt >= heatStart) {
-        const Q = Math.floor((dayStart - new Date(new Date(mt).getFullYear(), new Date(mt).getMonth(), new Date(mt).getDate()).getTime()) / 86400000);
-        const idx = dow - Q; // 0=最早周一, 97=本周日
-        if (idx >= 0 && idx < US) activity[idx]++;
+      if (mt >= histStart) {
+        const _hymd = ymdOf(mt);
+        dayHist.set(_hymd, (dayHist.get(_hymd) || 0) + 1);
       }
       activeDates.add(ymdOf(mt));
       if (!hasOut.has(file.path) && !isTarget.has(file.path)) orphan++;
@@ -9273,7 +9271,7 @@ class WorkbenchPlugin extends Plugin {
       connectivity: total ? Math.round((total - orphan) / total * 100) : 0,
       totalTasks, doneTasks, pendingTasks: totalTasks - doneTasks,
       taskCompletion: totalTasks ? Math.round(doneTasks / totalTasks * 100) : 0,
-      activity
+      dayHist
     };
   }
 
@@ -9378,13 +9376,9 @@ class WorkbenchPlugin extends Plugin {
       mid.createDiv({ cls: "dashboard-banner-stat-sub", text: `本周${stats.newThisWeek}篇 · 本月${stats.newThisMonth}篇` });
       const chart = mid.createDiv({ cls: "dashboard-banner-stat-chart" });
       const hm = chart.createDiv({ cls: "dashboard-banner-heatmap" });
-      const _max = Math.max(1, ...stats.activity);
-      for (let a = 0; a < stats.activity.length; a++) {
-        const cell = hm.createDiv({ cls: "dashboard-banner-heatmap-cell" });
-        const r = stats.activity[a] / _max;
-        cell.addClass("dashboard-banner-heatmap-cell--l" + (stats.activity[a] <= 0 ? 0 : r <= 0.25 ? 1 : r <= 0.5 ? 2 : r <= 0.75 ? 3 : 4));
-        if (a === stats.activity.length - 1) cell.addClass("dashboard-banner-heatmap-cell--today");
-      }
+      this._lastStats = stats;
+      this.renderHeatmap(hm, stats.dayHist);
+      this.scheduleHeatmapMeasure(el);
 
       /* 右栏：4 个进度指标（名称+值+进度条） */
       const right = bs.createDiv({ cls: "dashboard-banner-stat-col dashboard-banner-stat-col--right" });
@@ -9555,6 +9549,50 @@ class WorkbenchPlugin extends Plugin {
 
     el.setAttribute("data-wb-rendered", "1");
     state.loading = false;
+  }
+
+  /* 热力图：3 行 × 列数（每点 12px、间隔 4px；列数由中栏宽度自适应，默认 24） */
+  renderHeatmap(hm, dayHist) {
+    const cols = this._heatCols || DEFAULT_HEAT_COLS;
+    const days = cols * 3;
+    const arr = new Array(days).fill(0);
+    const base = new Date();
+    base.setHours(0, 0, 0, 0);
+    for (let d = 0; d < days; d++) {
+      const ymd = ymdOf(base.getTime() - (days - 1 - d) * 86400000);
+      arr[d] = (dayHist && dayHist.get(ymd)) || 0;
+    }
+    if (typeof hm.style.setProperty === "function") hm.style.setProperty("--heat-cols", String(cols)); else hm.style["--heat-cols"] = String(cols);
+    const _max = Math.max(1, ...arr);
+    for (let a = 0; a < arr.length; a++) {
+      const cell = hm.createDiv({ cls: "dashboard-banner-heatmap-cell" });
+      const r = arr[a] / _max;
+      cell.addClass("dashboard-banner-heatmap-cell--l" + (arr[a] <= 0 ? 0 : r <= 0.25 ? 1 : r <= 0.5 ? 2 : r <= 0.75 ? 3 : 4));
+      if (a === arr.length - 1) cell.addClass("dashboard-banner-heatmap-cell--today");
+    }
+  }
+
+  /* 挂载后测量中栏宽度 -> 换算列数 -> 变化时重绘热力图 */
+  scheduleHeatmapMeasure(root) {
+    const chart = root && root.querySelector(".dashboard-banner-stat-chart");
+    if (!chart) return;
+    if (!this._heatRO && typeof ResizeObserver !== "undefined") {
+      this._heatRO = new ResizeObserver(() => this.measureHeatmap(chart));
+      this._heatRO.observe(chart);
+    }
+    setTimeout(() => this.measureHeatmap(chart), 50);
+  }
+
+  measureHeatmap(chart) {
+    const w = chart.clientWidth;
+    const cols = w > 0 ? Math.max(6, Math.floor((w + 4) / 16)) : DEFAULT_HEAT_COLS;
+    if (cols === (this._heatCols || DEFAULT_HEAT_COLS)) return;
+    this._heatCols = cols;
+    const hm = chart.querySelector(".dashboard-banner-heatmap");
+    if (hm) {
+      hm.empty();
+      this.renderHeatmap(hm, this._lastStats ? this._lastStats.dayHist : null);
+    }
   }
 
   renderTaskItem(plugin, t, now, isOverdue) {
@@ -9884,7 +9922,8 @@ class WorkbenchView extends ItemView {
     }));
   }
 
-  async onClose() {}
+  async onClose() {
+    if (this._heatRO) { this._heatRO.disconnect(); this._heatRO = null; }}
 
   async render() {
     if (this.state.loading || !this.contentEl) return;

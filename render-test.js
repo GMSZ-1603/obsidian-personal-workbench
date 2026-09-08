@@ -203,7 +203,9 @@ const app = {
   check("左栏文件夹", /\d+文件夹/.test(bannerText), bannerText);
   check("左栏属性", /\d+属性/.test(bannerText), bannerText);
   const dots = el.querySelectorAll(".dashboard-banner-heatmap-cell");
-  check("活动点阵98格", dots.length === 98, "got " + dots.length);
+  const hm = el.querySelector(".dashboard-banner-heatmap");
+  check("活动点阵3行排满(默认24列×3=72格)", dots.length === 72, "got " + dots.length);
+  check("热力图列数变量--heat-cols=24", !!hm && hm.style["--heat-cols"] === "24", hm && hm.style["--heat-cols"]);
   const numL = banner && banner.querySelector(".dashboard-banner-stat-num");
   check("总笔记数>0", !!numL && parseInt(numL.textContent) > 0, numL && numL.textContent);
   check("热力图today标记", !!el.querySelector(".dashboard-banner-heatmap-cell--today"));
