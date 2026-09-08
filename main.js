@@ -9689,15 +9689,21 @@ class WorkbenchPlugin extends Plugin {
       cell.setAttribute("data-ymd", ymd);
       cell.setAttribute("data-n", String(v));
       cell.addEventListener("mousemove", (ev) => {
-        if (!tip) tip = hm.createDiv({ cls: "wb-heat-tip" });
+        if (!tip) {
+          tip = document.createElement("div");
+          tip.className = "wb-heat-tip";
+          (document.body || hm).appendChild(tip);
+        }
         const _d = new Date(ymd + "T00:00:00");
         tip.textContent = `${_d.getFullYear()}年${_d.getMonth() + 1}月${_d.getDate()}日 周${_WD[_d.getDay()]} · 编辑 ${v} 篇`;
-        const rect = hm.getBoundingClientRect();
-        const _w = tip.offsetWidth || 130;
-        let _l = ev.clientX - rect.left + 12;
-        if (_l + _w > rect.width) _l = ev.clientX - rect.left - _w - 12;
-        tip.style.left = Math.max(0, _l) + "px";
-        tip.style.top = Math.max(0, ev.clientY - rect.top + 14) + "px";
+        const _w = tip.offsetWidth || 150;
+        const _h = tip.offsetHeight || 30;
+        const _vw = (window.innerWidth || 1280), _vh = (window.innerHeight || 800);
+        let _l = ev.clientX + 14, _t = ev.clientY + 16;
+        if (_l + _w > _vw) _l = ev.clientX - _w - 14;
+        if (_t + _h > _vh) _t = ev.clientY - _h - 14;
+        tip.style.left = Math.max(4, _l) + "px";
+        tip.style.top = Math.max(4, _t) + "px";
       });
       cell.addEventListener("mouseleave", _hideTip);
     }
