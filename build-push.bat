@@ -5,7 +5,8 @@ REM  个人工作台插件 - Win10-LB 开发机 一键构建+同步+推送
 REM  首次使用：修改下面 DEV(开发目录) 和 DOC(文档路径)，保存
 REM ============================================================
 set DEV=C:\Users\admin\Doubao\chats\2026-09-03\new-chat-1\workbench-plugin
-set DOC=D:\Obsidian\Second Brain\安排\个人工作台插件开发与发布标准操作文档.md
+REM 文档路径双机自适应：Win10-LB 在「项目」，DELL-7480 在「安排」
+if exist "D:\Obsidian\Second Brain\项目\个人工作台插件开发与发布标准操作文档.md" (set DOC=D:\Obsidian\Second Brain\项目\个人工作台插件开发与发布标准操作文档.md) else (set DOC=D:\Obsidian\Second Brain\安排\个人工作台插件开发与发布标准操作文档.md)
 set SHARE=Y:\99临时文件\wb-plugin
 set LOCAL=D:\Obsidian\Second Brain\.obsidian\plugins\personal-workbench
 
