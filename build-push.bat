@@ -48,4 +48,4 @@ goto end
 :err
 echo ***** 构建/测试失败，未同步、未推送 *****
 :end
-pause
+if /i not "%1"=="nopause" pause
