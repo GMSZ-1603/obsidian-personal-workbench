@@ -72,5 +72,22 @@ const d = new Date(2026, 8, 3);
 eq("2026-09-03 dayOfYear", T.dayOfYear(d), 246);
 eq("2026 daysInYear", T.daysInYear(2026), 365);
 
+console.log("== 热力图记录笔记 ==");
+{
+  const sec = T.heatmapSection("2026-09-09", ["工作/安靠.md", "安排/文档.md"]);
+  eq("section 标题", sec.split("\n")[0], "## 2026-09-09 · 编辑 2 篇");
+  eq("section 链接行数", sec.split("\n").length, 3);
+  eq("section 首链接", sec.split("\n")[1], "- [[工作/安靠.md]]");
+  const sec0 = T.heatmapSection("2026-09-08", []);
+  eq("section 空列表", sec0, "## 2026-09-08 · 编辑 0 篇");
+}
+{
+  const df = { "2026-09-09": ["a"], "2026-09-07": ["b"], "2026-09-10": [] };
+  eq("pending 无已写", T.heatmapPendingDates(df, []), ["2026-09-07", "2026-09-09"]);
+  eq("pending 过滤已写", T.heatmapPendingDates(df, ["2026-09-09"]), ["2026-09-07"]);
+  eq("pending 全已写", T.heatmapPendingDates(df, ["2026-09-07", "2026-09-09"]), null);
+  eq("笔记路径", T.HEATMAP_LOG_PATH, "统计/热力图编辑记录.md");
+}
+
 console.log(`\n通过 ${pass} / ${pass + fail}`);
 process.exit(fail ? 1 : 0);

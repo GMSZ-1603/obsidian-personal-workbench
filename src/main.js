@@ -83,6 +83,7 @@ const DEFAULT_SETTINGS = {
   singleDay: "sun",
   sdStart: "double",
   manualWeeks: {},
+  heatmapLogWritten: [],
   editLog: {}
 };
 
@@ -142,6 +143,26 @@ function weekendRest(settings, y, m, d, dow) {
   const single = (settings.sdStart === "single") === ((isoWeek(y, m, d) % 2) === (wk0 % 2));
   if (single) return dow === (settings.singleDay === "sat" ? 6 : 0);
   return true;
+}
+
+/* ============ 热力图记录笔记（生成/追加，永久保留） ============ */
+const HEATMAP_LOG_PATH = "统计/热力图编辑记录.md";
+const HEATMAP_LOG_HEADER = "# 热力图编辑记录\n\n> 由 personal-workbench 插件自动生成 · 记录每日编辑明细 · 已有内容永久保留\n\n";
+
+/* 单个日期的 block 文本：## 日期 · 编辑 N 篇 + wiki 链接列表 */
+function heatmapSection(ymd, paths) {
+  const list = paths && paths.length ? paths : [];
+  const lines = [`## ${ymd} · 编辑 ${list.length} 篇`];
+  for (const p of list) lines.push(`- [[${p}]]`);
+  return lines.join("\n");
+}
+
+/* 计算待追加日期（未写入过的，升序）；返回 null 表示无新增 */
+function heatmapPendingDates(dayFiles, written) {
+  const w = new Set(written || []);
+  const keys = Object.keys(dayFiles).filter(k => (dayFiles[k] || []).length > 0);
+  const pending = keys.filter(k => !w.has(k)).sort();
+  return pending.length ? pending : null;
 }
 
 /* 解析任务文本中的时间描述（如 上午9点 / 下午1点半 / 14:00）→ 当日分钟数；无法解析返回 null */
@@ -636,6 +657,11 @@ class WorkbenchPlugin extends Plugin {
       name: "打开个人工作台",
       callback: () => this.openWorkbenchView()
     });
+    this.addCommand({
+      id: "update-heatmap-log",
+      name: "生成/更新热力图记录",
+      callback: () => { this._lastHeatLog = 0; this.updateHeatmapLog(); }
+    });
     this.addRibbonIcon("layout-dashboard", "打开个人工作台", () => this.openWorkbenchView());
 
     this.addSettingTab(new WorkbenchSettingTab(this.app, this));
@@ -644,6 +670,10 @@ class WorkbenchPlugin extends Plugin {
     this._backfillImport();
     // 元属性判断基线：异步预扫全库正文 hash（仅改 frontmatter 的保存不计入编辑）
     this._initBodyHashes();
+    // 热力图记录笔记：启动后生成/追加（只增不改）
+    this.app.workspace.onLayoutReady(() => {
+      window.setTimeout(() => { this._lastHeatLog = 0; this.updateHeatmapLog(); }, 1500);
+    });
   }
 
   /* 恢复持久化的天气缓存（重启不重复请求）*/
@@ -858,6 +888,8 @@ class WorkbenchPlugin extends Plugin {
     try {
       if (!file || file.extension !== "md") return;
       if (this._pendingRename && this._pendingRename.has(file.path)) return;
+      // 排除目录（与统计口径一致）：统计/ 下自动生成的记录笔记等不计入编辑
+      if ((this.settings.excludeFolders || []).some(z => z && (file.path === z || String(file.path).toLowerCase().startsWith(String(z).toLowerCase() + "/")))) return;
       // 时效校验：Obsidian 启动/重载会对存量旧文件误触发 modify/create（mtime 为过去时间），
       // 真实编辑保存后 mtime ≈ 当前时间。mtime 距今超过 2 分钟的事件一律忽略。
       const mt = file.stat && file.stat.mtime;
@@ -881,7 +913,7 @@ class WorkbenchPlugin extends Plugin {
     } catch (e) { /* 静默：不影响编辑 */ }
   }
 
-  /* 把按文件去重的集合落盘：本月内存文件列表（供本周/本月去重统计），历史日期存数字（压缩体积） */
+  /* 把按文件去重的集合落盘：统一存文件路径列表（历史也保留明细，供热力图记录笔记永久查看） */
   saveEditLog() {
     this._editLogTimer = null;
     if (!this._editFiles) return;
@@ -892,7 +924,7 @@ class WorkbenchPlugin extends Plugin {
       if (!set || set.size === 0) continue;
       const ms = new Date(k + "T00:00:00").getTime();
       if (ms >= mStart) this.settings.editLog[k] = [...set]; // 本月：文件路径列表（去重统计用）
-      else this.settings.editLog[k] = set.size;              // 历史：仅篇数（压缩）
+      else this.settings.editLog[k] = [...set];              // 历史：也保留路径列表（v1.5.0 起不再压缩成数字）
       if (k < todayStr()) delete this._editFiles[k]; // 非今天集合落盘后释放内存
     }
     if (this.app && this.app.vault && this.app.vault.adapter) this.saveSettings();
@@ -954,6 +986,7 @@ class WorkbenchPlugin extends Plugin {
 
     let total = 0, newMonth = 0, newWeek = 0, newQuarter = 0, newYear = 0, orphan = 0;
     const dayHist = new Map();
+    const dayFiles = new Map(); // ymd -> [文件路径...]（热力图记录笔记用）
     const _elog = this.settings.editLog || {};
     const _mlog = this.settings.movedLog || {};
     const _ilog = this.settings.importLog || {};
@@ -981,6 +1014,8 @@ class WorkbenchPlugin extends Plugin {
         const _hymd = ymdOf(mt);
         if (!(_mlog[_hymd] || []).includes(file.path) && !(_ilog[_hymd] || []).includes(file.path) && !neverEdited.has(file.path)) {
           dayHist.set(_hymd, (dayHist.get(_hymd) || 0) + 1);
+          if (!dayFiles.has(_hymd)) dayFiles.set(_hymd, []);
+          dayFiles.get(_hymd).push(file.path);
           activeDates.add(_hymd);
         }
       }
@@ -1006,6 +1041,8 @@ class WorkbenchPlugin extends Plugin {
       if (v == null) continue;
       const n = Array.isArray(v) ? v.length : (typeof v === "number" ? v : 0);
       if (n > 0) { dayHist.set(k, n); activeDates.add(k); }
+      // 数组=真编辑明细（v1.5.0 起历史也存数组）；数字=旧版压缩（无明细），保留基线列表作回填
+      if (Array.isArray(v) && v.length) dayFiles.set(k, [...v]);
     }
     // 本周/本月编辑数：按"期间内编辑过的不同笔记数"（文件级去重：mtime 最后编辑 + 编辑日志文件列表）
     newMonth = 0; newWeek = 0;
@@ -1034,6 +1071,8 @@ class WorkbenchPlugin extends Plugin {
     return {
       totalNotes: total,
       noteList: files.filter(f => !(_mlog[ymdOf(f.stat.mtime)] || []).includes(f.path) && !(_ilog[ymdOf(f.stat.mtime)] || []).includes(f.path) && !neverEdited.has(f.path)).map(f => ({ p: f.path, m: f.stat.mtime })),
+      dayFiles, // ymd -> [路径]（热力图记录笔记明细）
+      dayHist,
       newThisMonth: newMonth,
       newThisWeek: newWeek,
       newThisQuarter: newQuarter,
@@ -1049,9 +1088,47 @@ class WorkbenchPlugin extends Plugin {
       avgLinksPerNote: total ? totalLinks / total : 0,
       connectivity: total ? Math.round((total - orphan) / total * 100) : 0,
       totalTasks, doneTasks, pendingTasks: totalTasks - doneTasks,
-      taskCompletion: totalTasks ? Math.round(doneTasks / totalTasks * 100) : 0,
-      dayHist
+      taskCompletion: totalTasks ? Math.round(doneTasks / totalTasks * 100) : 0
     };
+  }
+
+  /* 生成/更新「统计/热力图编辑记录.md」：只增不改，已有内容永久保留
+     首次（笔记不存在）：全量写入所有有明细的日期（含历史回填），倒序；
+     之后：仅把未写入过的日期 block 追加到文件末尾 */
+  async updateHeatmapLog() {
+    try {
+      if (!this.app || !this.app.vault) return;
+      const stats = this.computeStats();
+      const dayFiles = stats.dayFiles;
+      if (!dayFiles || !dayFiles.size) return;
+      const vault = this.app.vault;
+      const exFile = vault.getAbstractFileByPath(HEATMAP_LOG_PATH);
+      const exists = !!(exFile && exFile.extension === "md");
+      const written = new Set(this.settings.heatmapLogWritten || []);
+      const keys = [...dayFiles.keys()].filter(k => (dayFiles.get(k) || []).length > 0);
+      let blocks = "", newWritten = [];
+      if (!exists) {
+        // 全量重建：全部日期（倒序），写入后全部标记已写
+        blocks = [...keys].sort().reverse().map(k => heatmapSection(k, dayFiles.get(k))).join("\n\n");
+        newWritten = keys;
+      } else {
+        const pending = heatmapPendingDates(Object.fromEntries(dayFiles), [...written]);
+        if (!pending) return;
+        blocks = pending.map(k => heatmapSection(k, dayFiles.get(k))).join("\n\n");
+        newWritten = pending;
+      }
+      if (!blocks) return;
+      if (!exists) {
+        await vault.create(HEATMAP_LOG_PATH, HEATMAP_LOG_HEADER + blocks + "\n");
+      } else {
+        const cur = await vault.cachedRead(exFile);
+        const sep = cur.endsWith("\n") ? "" : "\n";
+        await vault.modify(exFile, cur + sep + blocks + "\n");
+      }
+      for (const k of newWritten) written.add(k);
+      this.settings.heatmapLogWritten = [...written];
+      await this.saveSettings();
+    } catch (e) { console.error("workbench updateHeatmapLog", e); }
   }
 
   /* ---- 工作台渲染 ---- */
@@ -1180,6 +1257,11 @@ class WorkbenchPlugin extends Plugin {
       this._lastStats = stats;
       this.renderHeatmap(hm, stats.dayHist);
       this.scheduleHeatmapMeasure(el);
+      // 热力图记录笔记：节流自动追加（每 5 分钟最多一次；当天新编辑会在下次刷新时补录）
+      if (!this._lastHeatLog || Date.now() - this._lastHeatLog > 5 * 60 * 1000) {
+        this._lastHeatLog = Date.now();
+        this.updateHeatmapLog();
+      }
 
       /* 右栏：4 个进度指标（名称+值+进度条） */
       const right = bs.createDiv({ cls: "dashboard-banner-stat-col dashboard-banner-stat-col--right" });
@@ -1870,7 +1952,7 @@ class WorkbenchSettingTab extends PluginSettingTab {
 
 /* 测试钩子（仅用于构建期自测） */
 if (typeof globalThis !== "undefined") {
-  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, bodyText, bodyHash, parseTaskTime, isoWeek, weekendRest, yearWeekends, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, fetchOpenMeteoExtra, QW_ICONS };
+  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, bodyText, bodyHash, parseTaskTime, isoWeek, weekendRest, yearWeekends, heatmapSection, heatmapPendingDates, HEATMAP_LOG_PATH, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, fetchOpenMeteoExtra, QW_ICONS };
 }
 
 module.exports = WorkbenchPlugin;
