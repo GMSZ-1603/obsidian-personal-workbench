@@ -8810,6 +8810,25 @@ function dailyQuote(y, m, d) {
   return DAILY_QUOTES[idx];
 }
 
+/* 正文提取：去掉开头 frontmatter YAML 块（---...---），用于"仅元属性修改不计入编辑"判断 */
+function bodyText(t) {
+  if (typeof t !== "string") return t || "";
+  if (t.startsWith("---")) {
+    const nl = t.indexOf("\n", 3);
+    if (nl > 0) {
+      const close = t.indexOf("\n---", nl + 1);
+      if (close > 0) return t.slice(close + 5);
+    }
+  }
+  return t;
+}
+/* FNV-1a 32 位正文 hash */
+function bodyHash(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return h >>> 0;
+}
+
 /* 将一句引用按标点/中点分成两行，使两行字数相近、不挤在一行 */
 function splitQuote(s) {
   if (!s) return ["", ""];
@@ -8862,8 +8881,8 @@ async function scanTasks(app, settings) {
       if (!m) continue;
       const done = m[1] !== " ";
       const raw = m[2];
-      const scheduled = (raw.match(/📅\s*(\d{4}-\d{2}-\d{2})/) || [])[1] || null;
-      const due = (raw.match(/⏳\s*(\d{4}-\d{2}-\d{2})/) || [])[1] || null;
+      const scheduled = (raw.match(/⏳\s*(\d{4}-\d{2}-\d{2})/) || [])[1] || null;
+      const due = (raw.match(/📅\s*(\d{4}-\d{2}-\d{2})/) || [])[1] || null;
       const date = scheduled || due; // 优先 scheduled，无则 due
       if (!date) continue;
       const clean = raw
@@ -9072,13 +9091,24 @@ class WorkbenchPlugin extends Plugin {
       }));
     });
 
-    // 编辑日志：编辑/创建计入当天编辑篇数；删除从当天移除（附件非 md 天然排除）
-    // 移动/重命名笔记不计入编辑计数：Obsidian 移动文件会触发 modify，需按 rename 识别并排除
+    // 编辑日志：只把"修改正文"的保存计入编辑篇数（移动/改属性/启动误报的正文均未变 → 天然不计入）
+    // 移动/重命名：Obsidian 会触发 modify 但正文不变，正文 hash 比较即可排除；
+    // 需在 rename 时把 hash 基线从旧路径迁移到新路径，否则新路径无基线会被误计为编辑。
+    // movedLog 仍写入：用于"插件未运行的历史日期"（mtime 基线阶段）排除移动产生的 mtime 变化。
     this._pendingRename = new Set();
     this._renameTimers = {};
-    this.registerEvent(this.app.vault.on("rename", (f) => {
+    this.registerEvent(this.app.vault.on("rename", (f, oldPath) => {
       if (!f || f.extension !== "md") return;
       this._pendingRename.add(f.path);
+      // 正文 hash 基线随路径迁移
+      if (this._bodyHashes) {
+        if (oldPath && this._bodyHashes.has(oldPath)) {
+          this._bodyHashes.set(f.path, this._bodyHashes.get(oldPath));
+          this._bodyHashes.delete(oldPath);
+        } else if (this._bodyHashes.has(f.path)) {
+          this._bodyHashes.delete(f.path);
+        }
+      }
       const _k = todayStr();
       try {
         this.settings.movedLog = this.settings.movedLog || {};
@@ -9108,6 +9138,8 @@ class WorkbenchPlugin extends Plugin {
 
     // 导入识别：启动时回溯今天批量导入（同目录同小时>=50篇），排除其编辑计数
     this._backfillImport();
+    // 元属性判断基线：异步预扫全库正文 hash（仅改 frontmatter 的保存不计入编辑）
+    this._initBodyHashes();
   }
 
   /* 恢复持久化的天气缓存（重启不重复请求）*/
@@ -9213,6 +9245,10 @@ class WorkbenchPlugin extends Plugin {
   /* ---- 导入识别：外部批量导入的笔记不计入编辑计数 ---- */
   _impEnqueue(file) {
     if (!file || file.extension !== "md") return;
+    // 启动误报防护：Obsidian 启动/重载会对存量旧文件误触发 create（mtime 为过去时间），
+    // 仅 mtime 距今 2 分钟内的"真新建/真复制入库"才纳入批量导入识别。
+    const mt = file.stat && file.stat.mtime;
+    if (mt && Date.now() - mt > 2 * 60 * 1000) return;
     this._impQueue = this._impQueue || [];
     this._impQueue.push({ p: file.path, d: (file.path.split("/")[0] || "~"), t: Date.now() });
     if (this._impQueue.length > 5000) this._impQueue = this._impQueue.slice(-2000);
@@ -9234,46 +9270,104 @@ class WorkbenchPlugin extends Plugin {
     if (marked) { this.saveSettings(); this.saveEditLog(); }
   }
   /* 标记导入文件：记入 importLog（供统计排除）并从当天编辑集合回滚 */
-  _markImport(p) {
-    const k = todayStr();
+  _markImport(p, k) {
+    k = k || todayStr();
     this.settings.importLog = this.settings.importLog || {};
     const arr = this.settings.importLog[k] || (this.settings.importLog[k] = []);
     if (!arr.includes(p)) arr.push(p);
     if (this._editFiles && this._editFiles[k]) this._editFiles[k].delete(p);
   }
-  /* 启动回溯：今天 mtime 的文件，同目录同小时 >= 50 篇判定为批量导入（覆盖历史已计入） */
-  async _backfillImport() {
+  /* 启动时异步预扫全库正文 hash 基线：之后仅修改 frontmatter 元属性的保存不计入编辑 */
+  async _initBodyHashes() {
     try {
-      const k = todayStr();
-      const start = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
-      const agg = {}, byKey = {};
-      for (const f of this.app.vault.getMarkdownFiles()) {
-        if (f.stat.mtime < start) continue;
-        const h = new Date(f.stat.mtime).getHours();
-        const dir = f.path.split("/")[0] || "~";
-        const key = dir + "|" + h;
-        agg[key] = (agg[key] || 0) + 1;
-        (byKey[key] = byKey[key] || []).push(f.path);
-      }
-      let marked = false;
-      for (const [key, n] of Object.entries(agg)) if (n >= 50) { for (const p of byKey[key]) this._markImport(p); marked = true; }
-      if (marked) {
-        const el = this.settings.editLog || {};
-        if (Array.isArray(el[k])) {
-          const il = this.settings.importLog[k] || [];
-          const nv = el[k].filter(p => !il.includes(p));
-          if (nv.length !== el[k].length) el[k] = nv;
-        }
-        await this.saveSettings();
-        this.saveEditLog();
+      this._bodyHashes = new Map();
+      const files = this.app.vault.getMarkdownFiles();
+      const CHUNK = 50;
+      for (let i = 0; i < files.length; i += CHUNK) {
+        const slice = files.slice(i, i + CHUNK);
+        await Promise.all(slice.map(async (f) => {
+          try { this._bodyHashes.set(f.path, bodyHash(bodyText(await this.app.vault.cachedRead(f)))); } catch (e) { /* 忽略 */ }
+        }));
+        await new Promise((r) => setTimeout(r, 0));
       }
     } catch (e) { /* 静默 */ }
   }
 
+  /* 启动回溯：对所有历史日期检测批量导入（含今天，覆盖历史已计入）
+     三种判定：①「目录|小时」≥30 篇；②「全库|分钟」≥30 篇（整库同步 mtime 往往同一分钟）；
+     ③「同日 10 分钟滑动窗口」≥15 篇（连续几分钟内旧文件被批量改写，如小批量同步/批量脚本） */
+  async _backfillImport() {
+    try {
+      const aggH = {}, byKeyH = {}, aggM = {}, byKeyM = {}, dayArr = {};
+      for (const f of this.app.vault.getMarkdownFiles()) {
+        const d = new Date(f.stat.mtime);
+        const ymd = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+        const h = d.getHours(), mi = d.getMinutes();
+        const dir = f.path.split("/")[0] || "~";
+        const kh = ymd + "|" + dir + "|" + h, km = ymd + "|" + mi;
+        aggH[kh] = (aggH[kh] || 0) + 1; (byKeyH[kh] = byKeyH[kh] || []).push({ p: f.path, ymd });
+        aggM[km] = (aggM[km] || 0) + 1; (byKeyM[km] = byKeyM[km] || []).push({ p: f.path, ymd });
+        (dayArr[ymd] = dayArr[ymd] || []).push({ p: f.path, m: f.stat.mtime, ymd });
+      }
+      const ymdOf = (key) => key.split("|")[0];
+      const all = [];
+      for (const [key, n] of Object.entries(aggH)) if (n >= 30) for (const e of byKeyH[key]) all.push(e);
+      for (const [key, n] of Object.entries(aggM)) if (n >= 30) for (const e of byKeyM[key]) all.push(e);
+      // ③ 同日 10 分钟滑动窗口 ≥15（按 mtime 排序后滑窗，窗口内任一文件被标记）
+      const wset = new Map();
+      for (const [ymd, arr] of Object.entries(dayArr)) {
+        if (arr.length < 15) continue;
+        arr.sort((a, b) => a.m - b.m);
+        for (let i = 0; i < arr.length; i++) {
+          let j = i;
+          while (j + 1 < arr.length && arr[j + 1].m - arr[i].m <= 10 * 60000) j++;
+          if (j - i + 1 >= 15) for (let k = i; k <= j; k++) wset.set(arr[k].p, ymd);
+        }
+      }
+      for (const [p, ymd] of wset) all.push({ p, ymd });
+      const uniq = new Map();
+      for (const e of all) uniq.set(e.p, e.ymd);
+      let marked = false;
+      for (const [p, ymd] of uniq) this._markImport(p, ymd);
+      if (uniq.size) {
+        const el = this.settings.editLog || {};
+        const ymdSet = new Set([...Object.keys(aggH).map(ymdOf), ...Object.keys(aggM).map(ymdOf), ...wset.values()]);
+        for (const ymd of ymdSet) {
+          if (Array.isArray(el[ymd])) {
+            const il = this.settings.importLog[ymd] || [];
+            const nv = el[ymd].filter(p => !il.includes(p));
+            if (nv.length !== el[ymd].length) el[ymd] = nv;
+          }
+        }
+        marked = true;
+      }
+      if (marked) { await this.saveSettings(); this.saveEditLog(); }
+    } catch (e) { /* 静默 */ }
+  }
+
   trackEdit(file) {
+    return this._trackEditAsync(file);
+  }
+
+  /* 正文提取：去掉开头 frontmatter YAML 块（---...---），用于"仅元属性修改不计入"判断 */
+  async _trackEditAsync(file) {
     try {
       if (!file || file.extension !== "md") return;
       if (this._pendingRename && this._pendingRename.has(file.path)) return;
+      // 时效校验：Obsidian 启动/重载会对存量旧文件误触发 modify/create（mtime 为过去时间），
+      // 真实编辑保存后 mtime ≈ 当前时间。mtime 距今超过 2 分钟的事件一律忽略。
+      const mt = file.stat && file.stat.mtime;
+      if (mt && Date.now() - mt > 2 * 60 * 1000) return;
+      // 唯一编辑判定：正文 hash 未变（移动/仅改属性/启动伪事件均未改正文）→ 不计入
+      const bh = this._bodyHashes;
+      if (bh && bh.has(file.path)) {
+        try {
+          const text = await this.app.vault.cachedRead(file);
+          const h = bodyHash(bodyText(text));
+          if (h === bh.get(file.path)) return;
+          bh.set(file.path, h);
+        } catch (e) { /* 读取失败按真实编辑计入 */ }
+      }
       const k = todayStr();
       if (!this._editFiles) this._editFiles = {};
       if (!this._editFiles[k]) this._editFiles[k] = new Set();
@@ -9835,10 +9929,10 @@ class WorkbenchPlugin extends Plugin {
       ev.stopPropagation();
       this.toggleTaskComplete(t);
     });
-    const txt = row.createDiv({ cls: "wb-task-txt" + (t.due && t.date === t.due ? " wb-task-txt--due" : ""), text: t.text });
+    const txt = row.createDiv({ cls: "wb-task-txt" + (t.due ? " wb-task-txt--due" : ""), text: t.text });
     txt.title = t.file;
     const date = row.createDiv({ cls: "wb-task-date" });
-    date.createSpan({ cls: "wb-task-flag", text: t.scheduled ? "📅" : "⏳", title: t.scheduled ? "计划开始" : "截止" });
+    date.createSpan({ cls: "wb-task-flag", text: t.scheduled ? "⏳" : "📅", title: t.scheduled ? "计划开始" : "截止" });
     date.createSpan({ text: t.date.slice(5) });
     row.addEventListener("click", () => {
       const f = plugin.app.vault.getAbstractFileByPath(t.file);
@@ -10272,7 +10366,7 @@ class WorkbenchSettingTab extends PluginSettingTab {
 
 /* 测试钩子（仅用于构建期自测） */
 if (typeof globalThis !== "undefined") {
-  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, parseTaskTime, isoWeek, weekendRest, yearWeekends, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, fetchOpenMeteoExtra, QW_ICONS };
+  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, bodyText, bodyHash, parseTaskTime, isoWeek, weekendRest, yearWeekends, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, fetchOpenMeteoExtra, QW_ICONS };
 }
 
 module.exports = WorkbenchPlugin;

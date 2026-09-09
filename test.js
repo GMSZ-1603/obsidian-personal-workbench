@@ -53,6 +53,13 @@ eq("农历岁数(1964->2026)", T.lunarBirthdayAge(1964, 2026), 62);
   eq("splitQuote 行数相近", Math.abs(sp[0].length - sp[1].length) <= 3, true);
 }
 
+console.log("== 元属性判断（正文 hash）==");
+eq("bodyText 无frontmatter原样", T.bodyText("hello\nworld"), "hello\nworld");
+eq("bodyText 去掉frontmatter", T.bodyText("---\ntags: a\ndate: 2026\n---\n正文内容"), "正文内容");
+eq("bodyText 正文含---不误切", T.bodyText("---\ntags: a\n---\n正文\n---\n尾部"), "正文\n---\n尾部");
+eq("仅frontmatter变化hash不变", T.bodyHash(T.bodyText("---\ntags: a\n---\n正文")) === T.bodyHash(T.bodyText("---\ntags: b\n---\n正文")), true);
+eq("正文变化hash变", T.bodyHash(T.bodyText("---\ntags: a\n---\n正文A")) !== T.bodyHash(T.bodyText("---\ntags: a\n---\n正文B")), true);
+
 console.log("== 农历生日 -> 今年公历 ==");
 eq("卢小南 八月十二 -> 2026-09-22", T.lunarBirthdaySolar(2026, 8, 12), { y: 2026, m: 9, d: 22 });
 eq("庄可凤 九月十六 -> 2026-10-25", T.lunarBirthdaySolar(2026, 9, 16), { y: 2026, m: 10, d: 25 });

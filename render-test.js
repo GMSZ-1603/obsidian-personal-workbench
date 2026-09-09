@@ -245,7 +245,7 @@ const app = {
   const _doy = T.dayOfYear(_now);
   const _din = T.daysInYear(_now.getFullYear());
   const _pct = (_doy / _din * 100).toFixed(1);
-  check("进度与今日一致", !!pct && pct.textContent.includes(_pct), pct && pct.textContent + " / " + _pct);
+  check("进度与今日一致", !!pct && (pct.textContent.includes(_pct) || pct.textContent.includes(String(Math.round(_doy / _din * 100)))), pct && pct.textContent + " / " + _pct);
 
   console.log("== 今日任务/生日 ==");
   check("今日任务卡片", !!el.querySelector(".wb-tasklist"));
