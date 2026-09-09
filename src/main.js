@@ -689,7 +689,7 @@ class WorkbenchPlugin extends Plugin {
     }
   }
 
-  onunload() {}
+  onunload() { this.hideHeatTip(); }
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -1440,7 +1440,13 @@ class WorkbenchPlugin extends Plugin {
   }
 
   /* 热力图：3 行 × 列数（每点 12px、间隔 4px；列数由中栏宽度自适应，默认 24） */
+  /* 隐藏并清理全局热力图 tooltip（单例挂 body；重绘/视图关闭/插件卸载时必须清理，防止残留到其他笔记） */
+  hideHeatTip() {
+    if (this._heatTip) { this._heatTip.detach(); this._heatTip = null; }
+  }
+
   renderHeatmap(hm, dayHist) {
+    this.hideHeatTip(); // 重绘前先清理上一次可能残留的 tip
     const cols = this._heatCols || DEFAULT_HEAT_COLS;
     const days = cols * 3;
     const arr = new Array(days).fill(0);
@@ -1455,8 +1461,6 @@ class WorkbenchPlugin extends Plugin {
     if (typeof hm.style.setProperty === "function") hm.style.setProperty("--heat-cols", String(cols)); else hm.style["--heat-cols"] = String(cols);
     const _max = Math.max(1, ...arr);
     const _WD = "日一二三四五六";
-    let tip = null;
-    const _hideTip = () => { if (tip) { tip.detach(); tip = null; } };
     for (let a = 0; a < arr.length; a++) {
       const cell = hm.createDiv({ cls: "dashboard-banner-heatmap-cell" });
       const r = arr[a] / _max;
@@ -1467,23 +1471,23 @@ class WorkbenchPlugin extends Plugin {
       cell.setAttribute("data-ymd", ymd);
       cell.setAttribute("data-n", String(v));
       cell.addEventListener("mousemove", (ev) => {
-        if (!tip) {
-          tip = document.createElement("div");
-          tip.className = "wb-heat-tip";
-          (document.body || hm).appendChild(tip);
+        if (!this._heatTip) {
+          this._heatTip = document.createElement("div");
+          this._heatTip.className = "wb-heat-tip";
+          document.body.appendChild(this._heatTip);
         }
         const _d = new Date(ymd + "T00:00:00");
-        tip.textContent = `${_d.getFullYear()}年${_d.getMonth() + 1}月${_d.getDate()}日 周${_WD[_d.getDay()]} · 编辑 ${v} 篇`;
-        const _w = tip.offsetWidth || 150;
-        const _h = tip.offsetHeight || 30;
+        this._heatTip.textContent = `${_d.getFullYear()}年${_d.getMonth() + 1}月${_d.getDate()}日 周${_WD[_d.getDay()]} · 编辑 ${v} 篇`;
+        const _w = this._heatTip.offsetWidth || 150;
+        const _h = this._heatTip.offsetHeight || 30;
         const _vw = (window.innerWidth || 1280), _vh = (window.innerHeight || 800);
         let _l = ev.clientX + 14, _t = ev.clientY + 16;
         if (_l + _w > _vw) _l = ev.clientX - _w - 14;
         if (_t + _h > _vh) _t = ev.clientY - _h - 14;
-        tip.style.left = Math.max(4, _l) + "px";
-        tip.style.top = Math.max(4, _t) + "px";
+        this._heatTip.style.left = Math.max(4, _l) + "px";
+        this._heatTip.style.top = Math.max(4, _t) + "px";
       });
-      cell.addEventListener("mouseleave", _hideTip);
+      cell.addEventListener("mouseleave", () => this.hideHeatTip());
     }
   }
 
@@ -1838,8 +1842,10 @@ class WorkbenchView extends ItemView {
   }
 
   async onClose() {
+    this.hideHeatTip();
     this.flushEditLog();
-    if (this._heatRO) { this._heatRO.disconnect(); this._heatRO = null; }}
+    if (this._heatRO) { this._heatRO.disconnect(); this._heatRO = null; }
+  }
 
   async render() {
     if (this.state.loading || !this.contentEl) return;
