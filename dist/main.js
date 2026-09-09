@@ -8898,7 +8898,7 @@ async function scanTasks(app, settings) {
     try { content = await app.vault.cachedRead(file); } catch (e) { continue; }
     const lines = content.split("\n");
     for (const line of lines) {
-      const m = line.match(/^\s*[-*+]\s+\[( |x|X)\]\s+(.*)$/);
+      const m = line.match(/^\s*[-*+]\s+\[( |x|X)\]\s+([^\r\n]*)/);
       if (!m) continue;
       const done = m[1] !== " ";
       const raw = m[2];
@@ -9209,7 +9209,7 @@ class WorkbenchPlugin extends Plugin {
   /* ---- 数据获取（带缓存） ---- */
   async getTasks(force) {
     const c = this.tasksCache;
-    if (c.data && !c.stale && !force) return c.data;
+    if (c.data && c.data.length && !c.stale && !force) return c.data;
     if (c.scanning) return c.data || [];
     c.scanning = true;
     try { c.data = await scanTasks(this.app, this.settings); }
@@ -9245,7 +9245,7 @@ class WorkbenchPlugin extends Plugin {
   }
   async getBirthdays(force) {
     const c = this.birthdayCache;
-    if (c.data && !c.stale && !force) return c.data;
+    if (c.data && c.data.length && !c.stale && !force) return c.data;
     try { c.data = await scanBirthdays(this.app, this.settings); }
     catch (e) { console.error("workbench scanBirthdays", e); }
     c.stale = false;
@@ -10038,7 +10038,7 @@ class WorkbenchPlugin extends Plugin {
     const lines = content.split("\n");
     const target = t.raw.trim();
     const idx = lines.findIndex(line => {
-      const m = line.match(/^\s*[-*+]\s+\[( |x|X)\]\s+(.*)$/);
+      const m = line.match(/^\s*[-*+]\s+\[( |x|X)\]\s+([^\r\n]*)/);
       return m && m[2].trim() === target;
     });
     if (idx < 0) return;

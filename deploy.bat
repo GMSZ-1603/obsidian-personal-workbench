@@ -1,24 +1,26 @@
 @echo off
 chcp 65001 >nul
 REM ============================================================
-REM  ä¸ªäººå·¥ä½œå°æ’ä»¶ - DELL-7480 ä½¿ç”¨æœº ä¸€é”®æ›´æ–°
-REM  ä»å…±äº«æ–‡ä»¶å¤¹å¤åˆ¶æ–°ç‰ˆæœ¬åˆ°æ’ä»¶å®‰è£…ç›®å½•ï¼ˆdata.json ä¿ç•™ä¸è¦†ç›–ï¼‰
+REM  ¸öÈË¹¤×÷Ì¨²å¼ş - DELL-7480 Ê¹ÓÃ»ú Ò»¼ü¸üĞÂ
+REM  v2£¨2026-09-09£©£ºĞÂÔö versions.json Í¬²½
+REM  ´Ó¹²ÏíÎÄ¼ş¼Ğ¸´ÖÆĞÂ°æ±¾µ½²å¼ş°²×°Ä¿Â¼£¨data.json ±£Áô²»¸²¸Ç£©
 REM ============================================================
-set SHARE=Y:\99ä¸´æ—¶æ–‡ä»¶\wb-plugin
+set SHARE=Y:\99ÁÙÊ±ÎÄ¼ş\wb-plugin
 set DST=D:\Obsidian\Second Brain\.obsidian\plugins\personal-workbench
-set DOCDST=D:\Obsidian\Second Brain\å®‰æ’
+set DOCDST=D:\Obsidian\Second Brain\°²ÅÅ
 
-if not exist "%SHARE%\dist\main.js" (echo [é”™è¯¯] å…±äº«ä¸­æ²¡æœ‰æ–°ç‰ˆæœ¬ï¼Œè¯·å…ˆåœ¨ Win10-LB ä¸Šè¿è¡Œ build-push.bat & pause & exit /b 1)
+if not exist "%SHARE%\dist\main.js" (echo [´íÎó] ¹²ÏíÖĞÃ»ÓĞĞÂ°æ±¾£¬ÇëÏÈÔÚ Win10-LB ÉÏÔËĞĞ build-push.bat & pause & exit /b 1)
 
-echo [1/3] å¤åˆ¶æ’ä»¶æ–‡ä»¶...
+echo [1/3] ¸´ÖÆ²å¼şÎÄ¼ş...
 copy /y "%SHARE%\dist\main.js" "%DST%\" >nul
 copy /y "%SHARE%\dist\styles.css" "%DST%\" >nul
 copy /y "%SHARE%\dist\manifest.json" "%DST%\" >nul
-echo      data.json å·²ä¿ç•™ï¼ˆæœªè¦†ç›–ï¼‰
+if exist "%SHARE%\dist\versions.json" copy /y "%SHARE%\dist\versions.json" "%DST%\" >nul
+echo      data.json ÒÑ±£Áô£¨Î´¸²¸Ç£©£»ÒÑº¬ versions.json
 
-echo [2/3] åŒæ­¥æ–‡æ¡£å‰¯æœ¬...
-if exist "%SHARE%\docs\ä¸ªäººå·¥ä½œå°æ’ä»¶å¼€å‘ä¸å‘å¸ƒæ ‡å‡†æ“ä½œæ–‡æ¡£.md" copy /y "%SHARE%\docs\ä¸ªäººå·¥ä½œå°æ’ä»¶å¼€å‘ä¸å‘å¸ƒæ ‡å‡†æ“ä½œæ–‡æ¡£.md" "%DOCDST%\" >nul
+echo [2/3] Í¬²½ÎÄµµ¸±±¾...
+if exist "%SHARE%\docs\¸öÈË¹¤×÷Ì¨²å¼ş¿ª·¢Óë·¢²¼±ê×¼²Ù×÷ÎÄµµ.md" copy /y "%SHARE%\docs\¸öÈË¹¤×÷Ì¨²å¼ş¿ª·¢Óë·¢²¼±ê×¼²Ù×÷ÎÄµµ.md" "%DOCDST%\" >nul
 
-echo [3/3] å®Œæˆï¼
-echo       è¯·é‡å¯ Obsidianï¼ˆæˆ– Ctrl+P è¾“å…¥ reload é‡è½½æ’ä»¶ï¼‰
+echo [3/3] Íê³É£¡
+echo       ÇëÖØÆô Obsidian£¨»ò Ctrl+P ÊäÈë reload ÖØÔØ²å¼ş£©
 pause
