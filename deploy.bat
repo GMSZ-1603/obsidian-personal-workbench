@@ -1,26 +1,27 @@
 @echo off
 chcp 65001 >nul
 REM ============================================================
-REM  个人工作台插件 - DELL-7480 使用机 一键更新
-REM  v2（2026-09-09）：新增 versions.json 同步
-REM  从共享文件夹复制新版本到插件安装目录（data.json 保留不覆盖）
+REM  Personal Workbench Plugin - DELL-7480 Usage Machine One-Click Update
+REM  v3 (2026-09-09): English-only (bat encoding is parsed at launch;
+REM  keep ASCII/UTF-8 to avoid mojibake). Copies new version from share
+REM  to plugin install dir (data.json is kept).
 REM ============================================================
-set SHARE=Y:\99临时文件\wb-plugin
+set SHARE=Y:\99涓存椂鏂囦欢\wb-plugin
 set DST=D:\Obsidian\Second Brain\.obsidian\plugins\personal-workbench
-set DOCDST=D:\Obsidian\Second Brain\安排
+set DOCDST=D:\Obsidian\Second Brain\瀹夋帓
 
-if not exist "%SHARE%\dist\main.js" (echo [错误] 共享中没有新版本，请先在 Win10-LB 上运行 build-push.bat & pause & exit /b 1)
+if not exist "%SHARE%\dist\main.js" (echo [ERROR] No new version in share. Run build-push.bat on Win10-LB first. & pause & exit /b 1)
 
-echo [1/3] 复制插件文件...
+echo [1/3] copy plugin files...
 copy /y "%SHARE%\dist\main.js" "%DST%\" >nul
 copy /y "%SHARE%\dist\styles.css" "%DST%\" >nul
 copy /y "%SHARE%\dist\manifest.json" "%DST%\" >nul
 if exist "%SHARE%\dist\versions.json" copy /y "%SHARE%\dist\versions.json" "%DST%\" >nul
-echo      data.json 已保留（未覆盖）；已含 versions.json
+echo      data.json kept; versions.json included
 
-echo [2/3] 同步文档副本...
-if exist "%SHARE%\docs\个人工作台插件开发与发布标准操作文档.md" copy /y "%SHARE%\docs\个人工作台插件开发与发布标准操作文档.md" "%DOCDST%\" >nul
+echo [2/3] sync doc copy...
+if exist "%SHARE%\docs\涓汉宸ヤ綔鍙版彃浠跺紑鍙戜笌鍙戝竷鏍囧噯鎿嶄綔鏂囨。.md" copy /y "%SHARE%\docs\涓汉宸ヤ綔鍙版彃浠跺紑鍙戜笌鍙戝竷鏍囧噯鎿嶄綔鏂囨。.md" "%DOCDST%\" >nul
 
-echo [3/3] 完成！
-echo       请重启 Obsidian（或 Ctrl+P 输入 reload 重载插件）
+echo [3/3] done!
+echo       Restart Obsidian (or Ctrl+P - reload app) to load the new version
 pause
