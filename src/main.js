@@ -1102,6 +1102,11 @@ class WorkbenchPlugin extends Plugin {
       const dayFiles = stats.dayFiles;
       if (!dayFiles || !dayFiles.size) return;
       const vault = this.app.vault;
+      // 确保目录存在（vault.create 不会自动建目录）
+      const dir = HEATMAP_LOG_PATH.split("/").slice(0, -1).join("/");
+      if (dir && !vault.getAbstractFileByPath(dir)) {
+        try { await vault.createFolder(dir); } catch (e) { /* 已存在则忽略 */ }
+      }
       const exFile = vault.getAbstractFileByPath(HEATMAP_LOG_PATH);
       const exists = !!(exFile && exFile.extension === "md");
       const written = new Set(this.settings.heatmapLogWritten || []);
