@@ -710,6 +710,19 @@ class WorkbenchPlugin extends Plugin {
     workspace.revealLeaf(leaf);
   }
 
+  /* 打开笔记但避免重复标签：已打开则聚焦到已有标签，未打开才新建 */
+  async openNoteOnce(file) {
+    if (!file) return;
+    const { workspace } = this.app;
+    const hit = workspace.getLeaves().find(l => l.view && l.view.file && l.view.file.path === file.path);
+    if (hit) {
+      if (typeof workspace.revealLeaf === "function") { workspace.revealLeaf(hit); return; }
+      if (typeof workspace.setActiveLeaf === "function") { workspace.setActiveLeaf(hit); return; }
+    }
+    const leaf = workspace.getLeaf(false);
+    await leaf.openFile(file);
+  }
+
   /* ---- 数据获取（带缓存） ---- */
   async getTasks(force) {
     const c = this.tasksCache;
@@ -1531,7 +1544,7 @@ class WorkbenchPlugin extends Plugin {
     date.createSpan({ text: t.date.slice(5) });
     row.addEventListener("click", () => {
       const f = plugin.app.vault.getAbstractFileByPath(t.file);
-      if (f) plugin.app.workspace.getLeaf(false).openFile(f);
+      if (f) plugin.openNoteOnce(f);
     });
     return row;
   }
@@ -1588,7 +1601,7 @@ class WorkbenchPlugin extends Plugin {
       close();
       if (item.kind === "note") {
         const f = this.app.vault.getAbstractFileByPath(item.path);
-        if (f) this.app.workspace.getLeaf(false).openFile(f);
+        if (f) this.openNoteOnce(f);
       } else if (item.kind === "command") {
         this.app.commands.executeCommandById(item.id);
       }
