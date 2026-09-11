@@ -9210,13 +9210,16 @@ class WorkbenchPlugin extends Plugin {
   async openNoteOnce(file) {
     if (!file) return;
     const { workspace } = this.app;
-    const hit = workspace.getLeaves().find(l => l.view && l.view.file && l.view.file.path === file.path);
-    if (hit) {
-      if (typeof workspace.revealLeaf === "function") { workspace.revealLeaf(hit); return; }
-      if (typeof workspace.setActiveLeaf === "function") { workspace.setActiveLeaf(hit); return; }
-    }
-    const leaf = workspace.getLeaf(false);
-    await leaf.openFile(file);
+    try {
+      const hit = workspace.getLeaves().find(l => l.view && l.view.file && l.view.file.path === file.path);
+      if (hit) {
+        if (typeof workspace.revealLeaf === "function") { workspace.revealLeaf(hit); return; }
+        if (typeof workspace.setActiveLeaf === "function") { workspace.setActiveLeaf(hit); return; }
+      }
+      // 明确新开 tab：getLeaf(false) 在活动页为工作台视图时会尝试替换该视图，导致点不开/异常
+      const leaf = workspace.getLeaf("tab");
+      await leaf.openFile(file);
+    } catch (e) { console.warn("workbench openNoteOnce", e); }
   }
 
   /* ---- 数据获取（带缓存） ---- */
@@ -10059,9 +10062,17 @@ class WorkbenchPlugin extends Plugin {
       return m && m[2].trim() === target;
     });
     if (idx < 0) return;
-    lines[idx] = t.done
-      ? lines[idx].replace(/\[(x|X)\]/, "[ ]")
-      : lines[idx].replace(/\[( |x|X)\]/, "[x]");
+    // 完成时间标记（Tasks 插件格式 ✅ YYYY-MM-DD / ✔ YYYY-MM-DD）
+    const DONE_MARK_RE = /\s*(?:✅|✔)\s*\d{4}-\d{2}-\d{2}\s*$/;
+    if (t.done) {
+      // 取消完成：移除完成时间标记
+      lines[idx] = lines[idx].replace(/\[(x|X)\]/, "[ ]").replace(DONE_MARK_RE, "");
+    } else {
+      // 完成：先清理旧标记防重复，再追加今天的完成时间
+      const dateStr = ymdOf(Date.now());
+      lines[idx] = lines[idx].replace(DONE_MARK_RE, "").replace(/\[( |x|X)\]/, "[x]");
+      lines[idx] = lines[idx].replace(/(\s*)$/, ` ✅ ${dateStr}$1`);
+    }
     try {
       await this.app.vault.process(f, () => lines.join("\n"));
     } catch (e) { console.warn("workbench toggle fail", e); return; }
