@@ -715,15 +715,18 @@ class WorkbenchPlugin extends Plugin {
     if (!file) return;
     const { workspace } = this.app;
     try {
-      const hit = workspace.getLeaves().find(l => l.view && l.view.file && l.view.file.path === file.path);
+      const hit = workspace.getLeavesOfType("markdown").find(l => l.view && l.view.file && l.view.file.path === file.path);
       if (hit) {
-        if (typeof workspace.revealLeaf === "function") { workspace.revealLeaf(hit); return; }
-        if (typeof workspace.setActiveLeaf === "function") { workspace.setActiveLeaf(hit); return; }
+        try { workspace.revealLeaf(hit); } catch (e) { workspace.setActiveLeaf(hit); }
+        return;
       }
-      // 明确新开 tab：getLeaf(false) 在活动页为工作台视图时会尝试替换该视图，导致点不开/异常
-      const leaf = workspace.getLeaf("tab");
+      // 经典 API：任何 Obsidian 版本都可靠（getLeaf("tab") 在旧版可能不识别）
+      const leaf = workspace.getLeaf(true);
       await leaf.openFile(file);
-    } catch (e) { console.warn("workbench openNoteOnce", e); }
+    } catch (e) {
+      console.warn("workbench openNoteOnce", e);
+      try { new Notice("无法打开笔记：" + (e && e.message ? e.message : e)); } catch (_) {}
+    }
   }
 
   /* ---- 数据获取（带缓存） ---- */
@@ -1547,7 +1550,15 @@ class WorkbenchPlugin extends Plugin {
     date.createSpan({ text: t.date.slice(5) });
     row.addEventListener("click", () => {
       const f = plugin.app.vault.getAbstractFileByPath(t.file);
-      if (f) plugin.openNoteOnce(f);
+      if (!f) return;
+      const ws = plugin.app.workspace;
+      const hit = ws.getLeavesOfType("markdown").find(l => l.view && l.view.file && l.view.file.path === f.path);
+      if (hit) {
+        if (typeof ws.revealLeaf === "function") { ws.revealLeaf(hit); return; }
+        ws.setActiveLeaf(hit); return;
+      }
+      // 经典 API：任何 Obsidian 版本都可靠
+      ws.getLeaf(true).openFile(f);
     });
     return row;
   }
