@@ -734,22 +734,45 @@ class WorkbenchPlugin extends Plugin {
   async openNoteAtLine(file, line) {
     if (!file) return;
     const { workspace } = this.app;
-    const goto = (v) => {
-      if (v && typeof v.setEphemeralState === "function") {
-        try { v.setEphemeralState({ line }); } catch (e) { console.warn("workbench setEphemeralState", e); }
-      }
+    const doLocate = (v) => {
+      if (!v) return;
+      try {
+        const L = Math.max(0, line || 0);
+        const mode = typeof v.getMode === "function" ? v.getMode() : null;
+        const ed = v.editor;
+        if (mode !== "preview" && ed && typeof ed.setCursor === "function") {
+          // 编辑视图：CodeMirror 编辑器定位（最可靠）
+          const pos = { line: L, ch: 0 };
+          ed.setCursor(pos);
+          if (typeof ed.scrollIntoView === "function") ed.scrollIntoView({ from: pos, to: pos }, true);
+          return;
+        }
+        // 阅读/其他视图：setEphemeralState 内部按行映射滚动
+        if (typeof v.setEphemeralState === "function") v.setEphemeralState({ line: L });
+      } catch (e) { console.warn("workbench locate", e); }
+    };
+    const waitLocate = (view) => {
+      // 等 editor 就绪（视图渲染完成），最多 25 次 × 80ms ≈ 2s
+      let tries = 0;
+      const tick = () => {
+        tries++;
+        if ((view && view.editor) || tries >= 25) { doLocate(view); return; }
+        setTimeout(tick, 80);
+      };
+      tick();
+      // 二次确认：1.5s 后再定位一次，防被后续渲染覆盖
+      setTimeout(() => doLocate(view), 1500);
     };
     try {
       const hit = workspace.getLeavesOfType("markdown").find(l => l.view && l.view.file && l.view.file.path === file.path);
       if (hit) {
         try { workspace.revealLeaf(hit); } catch (e) { workspace.setActiveLeaf(hit); }
-        // 已打开视图可能仍在渲染，稍等再定位
-        setTimeout(() => goto(hit.view), 60);
+        waitLocate(hit.view);
         return;
       }
       const leaf = workspace.getLeaf(true);
       await leaf.openFile(file);
-      setTimeout(() => goto(leaf.view), 120);
+      waitLocate(leaf.view);
     } catch (e) {
       console.warn("workbench openNoteAtLine", e);
       try { new Notice("无法打开笔记：" + (e && e.message ? e.message : e)); } catch (_) {}
