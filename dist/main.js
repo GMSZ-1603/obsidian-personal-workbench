@@ -8897,7 +8897,8 @@ async function scanTasks(app, settings) {
     let content;
     try { content = await app.vault.cachedRead(file); } catch (e) { continue; }
     const lines = content.split("\n");
-    for (const line of lines) {
+    for (let li = 0; li < lines.length; li++) {
+      const line = lines[li];
       const m = line.match(/^\s*[-*+]\s+\[( |x|X)\]\s+([^\r\n]*)/);
       if (!m) continue;
       const done = m[1] !== " ";
@@ -8914,7 +8915,7 @@ async function scanTasks(app, settings) {
         .replace(/#task\b/g, "")
         .replace(/\s{2,}/g, " ")
         .trim();
-      tasks.push({ file: path, text: clean, raw, done, scheduled, due, date });
+      tasks.push({ file: path, text: clean, raw, done, scheduled, due, date, line: li });
     }
   }
   return tasks;
@@ -9221,6 +9222,32 @@ class WorkbenchPlugin extends Plugin {
       await leaf.openFile(file);
     } catch (e) {
       console.warn("workbench openNoteOnce", e);
+      try { new Notice("无法打开笔记：" + (e && e.message ? e.message : e)); } catch (_) {}
+    }
+  }
+
+  /* 打开笔记并滚动到指定行（任务所在位置） */
+  async openNoteAtLine(file, line) {
+    if (!file) return;
+    const { workspace } = this.app;
+    const goto = (v) => {
+      if (v && typeof v.setEphemeralState === "function") {
+        try { v.setEphemeralState({ line }); } catch (e) { console.warn("workbench setEphemeralState", e); }
+      }
+    };
+    try {
+      const hit = workspace.getLeavesOfType("markdown").find(l => l.view && l.view.file && l.view.file.path === file.path);
+      if (hit) {
+        try { workspace.revealLeaf(hit); } catch (e) { workspace.setActiveLeaf(hit); }
+        // 已打开视图可能仍在渲染，稍等再定位
+        setTimeout(() => goto(hit.view), 60);
+        return;
+      }
+      const leaf = workspace.getLeaf(true);
+      await leaf.openFile(file);
+      setTimeout(() => goto(leaf.view), 120);
+    } catch (e) {
+      console.warn("workbench openNoteAtLine", e);
       try { new Notice("无法打开笔记：" + (e && e.message ? e.message : e)); } catch (_) {}
     }
   }
@@ -10047,14 +10074,7 @@ class WorkbenchPlugin extends Plugin {
     row.addEventListener("click", () => {
       const f = plugin.app.vault.getAbstractFileByPath(t.file);
       if (!f) return;
-      const ws = plugin.app.workspace;
-      const hit = ws.getLeavesOfType("markdown").find(l => l.view && l.view.file && l.view.file.path === f.path);
-      if (hit) {
-        if (typeof ws.revealLeaf === "function") { ws.revealLeaf(hit); return; }
-        ws.setActiveLeaf(hit); return;
-      }
-      // 经典 API：任何 Obsidian 版本都可靠
-      ws.getLeaf(true).openFile(f);
+      plugin.openNoteAtLine(f, t.line);
     });
     return row;
   }
