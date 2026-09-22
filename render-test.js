@@ -258,7 +258,7 @@ const app = {
   check("农历无数字(不含'农历八1')", !bdText.includes("农历八1") && !bdText.includes("八12"), bdText);
   check("公历带年(2026/9/22)", bdText.includes("2026/9/22"), bdText);
   const _diff = Math.round((new Date("2026-09-22T00:00:00") - new Date(`${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}-${String(_now.getDate()).padStart(2, "0")}T00:00:00`)) / 86400000);
-  check("剩余天数在公历前", _diff > 0 && bdText.includes(`还有${_diff}天2026/9/22`), bdText);
+  check("剩余天数在公历前", bdText.includes("2026/9/22") && (_diff > 0 ? bdText.includes(`还有${_diff}天2026/9/22`) : bdText.includes("今天")), bdText);
   check("生日卡不显示姓名", !bdText.includes("卢小南"), bdText);
 
   console.log("== 左栏任务统计 ==");

@@ -239,7 +239,7 @@
 .wb-lunar-ganzhi { font-size: 11px; color: var(--wb-accent-2); letter-spacing: .4px; }
 .wb-lunar-date { font-size: 20px; font-weight: 700; }
 .wb-lunar-fest { font-size: 11px; color: var(--wb-warn); font-weight: 600; background: color-mix(in srgb, var(--wb-warn) 16%, transparent); border-radius: 6px; padding: 2px 8px; margin-left: 8px; vertical-align: 3px; }
-.wb-lunar-quote { font-size: 12px; color: #c7cad6; line-height: 1.7; border-left: 2px solid var(--wb-accent); padding-left: 10px; margin-top: 8px; text-align: left; }
+.wb-lunar-quote { font-size: 14px; color: #c7cad6; line-height: 1.7; border-left: 2px solid var(--wb-accent); padding-left: 10px; margin-top: 8px; text-align: left; align-self: flex-start; }
 .wb-lunar-verse { line-height: 1.7; white-space: nowrap; }
 
 /* ---------- 年度进度 ---------- */
