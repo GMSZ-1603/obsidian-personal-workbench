@@ -1677,11 +1677,18 @@ class WorkbenchPlugin extends Plugin {
       dd.empty();
       if (!q) { close(); return; }
       items = [];
-      // 笔记
+      // 笔记：多关键字 AND 搜索（空格分词），basename 全词匹配优先，不限文件夹深度
+      const kw = q.split(/\s+/).filter(Boolean);
       const notes = this.app.vault.getMarkdownFiles()
-        .filter(f => f.path.toLowerCase().includes(q))
-        .slice(0, 6)
-        .map(f => ({ kind: "note", label: f.basename, sub: f.path, path: f.path }));
+        .map(f => ({ f, ln: f.basename.toLowerCase(), lp: f.path.toLowerCase() }))
+        .filter(n => kw.every(k => n.ln.includes(k) || n.lp.includes(k)))
+        .sort((a, b) => {
+          const as = (a.ln.includes(q) ? 2 : 0) + (kw.every(k => a.ln.includes(k)) ? 1 : 0);
+          const bs = (b.ln.includes(q) ? 2 : 0) + (kw.every(k => b.ln.includes(k)) ? 1 : 0);
+          return bs - as || a.ln.localeCompare(b.ln, "zh-CN");
+        })
+        .slice(0, 12)
+        .map(n => ({ kind: "note", label: n.f.basename, sub: n.f.path, path: n.f.path }));
       // 命令
       const cmds = this.app.commands.listCommands()
         .filter(c => (c.name || "").toLowerCase().includes(q))
