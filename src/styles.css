@@ -306,6 +306,7 @@
 .wb-lg-fest { color: var(--wb-warn); }
 .wb-lg-term { color: #7fd6b0; }
 .wb-lg-holiday { color: var(--wb-holiday); }
+.wb-lg-act { color: #fbbf24; }
 .wb-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
 .wb-dow { text-align: center; font-size: 10px; color: var(--wb-muted); padding: 4px 0; }
 .wb-dow.wb-weekend { color: var(--wb-muted); opacity: .7; }
@@ -334,6 +335,9 @@
 .wb-bg-holiday { background: var(--wb-holiday); }
 .wb-bg-term { background: #2fa37f; }
 .wb-bg-fest { background: var(--wb-warn); }
+.wb-bg-act { background: var(--act-color, #94a3b8); width: auto; height: auto; padding: 1px 2px; border-radius: 4px; font-size: 8px; line-height: 8px; }
+.wb-day-act { font-size: 10px; color: var(--act-color, #94a3b8); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.wb-dd-act { margin-top: 6px; font-size: 12px; color: #fbbf24; }
 .wb-day-tcnt {
   position: absolute; bottom: 5px; right: 6px; font-size: 9px; color: var(--wb-accent-2);
   background: color-mix(in srgb, var(--wb-accent-2) 14%, transparent); border-radius: 5px; padding: 1px 5px;

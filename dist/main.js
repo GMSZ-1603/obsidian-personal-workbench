@@ -8562,6 +8562,7 @@ const DEFAULT_SETTINGS = {
   latitude: 31.77,
   longitude: 119.97,
   birthdayFile: "生活/生日日期.md",
+  activityFile: "统计/活动记录.md",
   excludeFolders: ["图片", "Templates", "OneNote", "smart-note-agent", ".smartnotes", "微信公众号文章", "统计"],
   refreshMinutes: 10,
   qweatherKey: "",
@@ -8948,6 +8949,51 @@ async function scanBirthdays(app, settings) {
   return list;
 }
 
+/* ---------------- 活动：专门笔记扫描（预设类型） ---------------- */
+const ACTIVITY_PRESET_TYPES = [
+  { key: "home", name: "回家", icon: "🏠", color: "#34d399", kw: ["回家", "回老家", "回爸妈", "回娘家", "回乡"] },
+  { key: "travel", name: "旅行", icon: "✈️", color: "#22d3ee", kw: ["旅行", "旅游", "游玩", "出游"] },
+  { key: "overtime", name: "加班", icon: "💼", color: "#f87171", kw: ["加班"] },
+  { key: "fitness", name: "健身", icon: "🏃", color: "#a78bfa", kw: ["健身", "锻炼", "跑步", "游泳"] },
+  { key: "party", name: "聚会", icon: "🎉", color: "#fbbf24", kw: ["聚会", "聚餐", "饭局"] },
+  { key: "trip", name: "出差", icon: "🚄", color: "#fb923c", kw: ["出差", "公出"] },
+  { key: "medical", name: "看病", icon: "🏥", color: "#4ade80", kw: ["看病", "就医", "体检", "复诊"] },
+  { key: "vacation", name: "休假", icon: "🌴", color: "#2dd4bf", kw: ["休假", "年假", "调休", "休息"] }
+];
+const ACTIVITY_FALLBACK = { key: "other", name: "活动", icon: "📌", color: "#94a3b8" };
+function activityTypeOf(text) {
+  return ACTIVITY_PRESET_TYPES.find(t => (t.kw || [t.name]).some(k => text.includes(k))) || ACTIVITY_FALLBACK;
+}
+// 活动笔记格式：- 10-01 回家 / - 2026-10-01 回家 / - 10-02~10-05 旅行 / - 10-02至10-05 旅行 / - 2026/10/1 回家
+function parseActivities(content, defYear) {
+  const map = new Map();
+  const yr = defYear || new Date().getFullYear();
+  const rows = String(content || "").split(/\r?\n/);
+  for (const raw of rows) {
+    let line = raw.trim().replace(/^[-*+]\s+/, "");
+    if (!line || line.startsWith("#") || line.startsWith("---")) continue;
+    const m = line.match(/^(\d{4})?[\s\-\/年]*(\d{1,2})[\-\/月](\d{1,2})(?:日)?\s*(?:[-~至到]\s*(\d{1,2})[\-\/月](\d{1,2})(?:日)?)?\s*(.*)$/);
+    if (!m) continue;
+    const y = m[1] ? Number(m[1]) : yr;
+    const m1 = Number(m[2]), d1 = Number(m[3]);
+    const text = (m[6] || "").trim();
+    if (!text || m1 < 1 || m1 > 12 || d1 < 1 || d1 > 31 || y < 2000 || y > 2100) continue;
+    let eM = m1, eD = d1;
+    if (m[4] && m[5]) { eM = Number(m[4]); eD = Number(m[5]); }
+    const start = new Date(y, m1 - 1, d1);
+    const end = new Date(y, eM - 1, eD);
+    if (end < start) continue;
+    const t = activityTypeOf(text);
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const key = fmtDate(d.getFullYear(), d.getMonth() + 1, d.getDate());
+      if (!map.has(key)) map.set(key, []);
+      const arr = map.get(key);
+      if (!arr.some(a => a.type === t.name && a.text === text)) arr.push({ type: t.name, icon: t.icon, color: t.color, text });
+    }
+  }
+  return map;
+}
+
 async function fetchWeather(settings, _req) {
   const req = _req || requestUrl;
   if (settings.qweatherKey && String(settings.qweatherKey).trim()) {
@@ -9083,6 +9129,7 @@ class WorkbenchPlugin extends Plugin {
     this.birthdayCache = { data: null, stale: true };
     this.weatherCache = { data: null, stale: true };
     this.extraCache = { data: null, stale: true };
+    this.activityCache = { data: null, stale: true };
     this._restoreWeatherCaches();
 
     // 独立视图（个人工作台页签）
@@ -9319,6 +9366,19 @@ class WorkbenchPlugin extends Plugin {
     catch (e) { console.error("workbench scanBirthdays", e); }
     c.stale = false;
     return c.data || [];
+  }
+
+  async getActivities(force) {
+    const c = this.activityCache;
+    if (c.data && !c.stale && !force) return c.data;
+    try {
+      const f = this.app.vault.getAbstractFileByPath(this.settings.activityFile);
+      let content = "";
+      if (f && f.extension === "md") { try { content = await this.app.vault.cachedRead(f); } catch (_e) {} }
+      c.data = parseActivities(content);
+    } catch (e) { console.error("workbench scanActivities", e); }
+    c.stale = false;
+    return c.data || new Map();
   }
 
   async getWeather(force) {
@@ -9715,11 +9775,12 @@ class WorkbenchPlugin extends Plugin {
     el.empty();
     const root = el.createDiv({ cls: "wb-dashboard" });
 
-    const [tasks, birthdays, weather, extra] = await Promise.all([
+    const [tasks, birthdays, weather, extra, activities] = await Promise.all([
       this.getTasks(),
       this.getBirthdays(),
       this.getWeather(),
-      this.getWeatherExtra()
+      this.getWeatherExtra(),
+      this.getActivities()
     ]);
 
     // 任务按日期索引（日历徽标/左栏今日任务只统计未完成任务；当天详情右侧显示全部含已完成）
@@ -9997,7 +10058,7 @@ class WorkbenchPlugin extends Plugin {
     /* ===== 日历 ===== */
     if (this.settings.calendarEnabled) {
       const calCard = grid.createDiv({ cls: "wb-card wb-calcard" });
-      this.renderCalendar(calCard, state, tasksByDate, birthdayEvents, allTasksByDate);
+      this.renderCalendar(calCard, state, tasksByDate, birthdayEvents, allTasksByDate, activities);
     }
 
     el.setAttribute("data-wb-rendered", "1");
@@ -10225,7 +10286,7 @@ class WorkbenchPlugin extends Plugin {
   }
 
   /* 日历 + 黄历详情 */
-  renderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate) {
+  renderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate, activityByKey) {
     // 头部
     const head = card.createDiv({ cls: "wb-cal-head" });
     const t1 = lunarLib.Solar.fromYmd(state.year, state.month, 1).getLunar();
@@ -10243,7 +10304,7 @@ class WorkbenchPlugin extends Plugin {
     const nav = head.createDiv({ cls: "wb-cal-nav" });
     const mkBtn = (txt, fn) => {
       const b = nav.createEl("button", { text: txt });
-      b.addEventListener("click", () => { fn(); this.rerenderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate); });
+      b.addEventListener("click", () => { fn(); this.rerenderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate, activityByKey); });
       return b;
     };
     mkBtn("‹", () => { state.month--; if (state.month < 1) { state.month = 12; state.year--; } });
@@ -10257,6 +10318,7 @@ class WorkbenchPlugin extends Plugin {
     legend.createSpan({ text: "● 节日", cls: "wb-lg-fest" });
     legend.createSpan({ text: "● 节气", cls: "wb-lg-term" });
     legend.createSpan({ text: "● 假期", cls: "wb-lg-holiday" });
+    legend.createSpan({ text: "● 活动", cls: "wb-lg-act" });
 
     // 网格
     const grid = card.createDiv({ cls: "wb-cal-grid" });
@@ -10319,10 +10381,20 @@ class WorkbenchPlugin extends Plugin {
       } else {
         cell.createDiv({ cls: "wb-day-lunar", text: lunar.getDayInChinese() });
       }
+      const acts = (activityByKey && activityByKey.get(key)) || null;
+      if (acts && acts.length && !festParts.length) {
+        const at = cell.createDiv({ cls: "wb-day-act", text: acts[0].icon + " " + acts[0].type });
+        if (typeof at.style.setProperty === "function") at.style.setProperty("--act-color", acts[0].color); else at.style.setProperty = acts[0].color;
+      }
       const badges = cell.createDiv({ cls: "wb-day-badges" });
       if (hol !== undefined && hol !== null) badges.createSpan({ cls: "wb-badge wb-bg-holiday", title: hol });
       if (jq) badges.createSpan({ cls: "wb-badge wb-bg-term", title: "节气" });
       if (lfest.length || sfest.length) badges.createSpan({ cls: "wb-badge wb-bg-fest", title: "节日" });
+      if (acts && acts.length) {
+        const ab = badges.createSpan({ cls: "wb-badge wb-bg-act", title: acts.map(a => a.text).join("，") });
+        ab.textContent = acts[0].icon;
+        if (typeof ab.style.setProperty === "function") ab.style.setProperty("--act-color", acts[0].color); else ab.style.setProperty = acts[0].color;
+      }
       const tasks = tasksByDate[key];
       if (tasks && tasks.length) {
         badges.createSpan({ cls: "wb-badge wb-bg-task", title: `${tasks.length} 个任务` });
@@ -10337,20 +10409,20 @@ class WorkbenchPlugin extends Plugin {
 
       cell.addEventListener("click", () => {
         state.selected = key;
-        this.renderDayDetail(card, state, tasksByDate, birthdayByKey, key, allTasksByDate);
+        this.renderDayDetail(card, state, tasksByDate, birthdayByKey, key, allTasksByDate, activityByKey);
         card.querySelectorAll(".wb-day").forEach(el2 => el2.toggleClass("wb-sel", el2 === cell));
       });
     }
 
-    this.renderDayDetail(card, state, tasksByDate, birthdayByKey, state.selected, allTasksByDate);
+    this.renderDayDetail(card, state, tasksByDate, birthdayByKey, state.selected, allTasksByDate, activityByKey);
   }
 
-  rerenderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate) {
+  rerenderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate, activityByKey) {
     card.empty();
-    this.renderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate);
+    this.renderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate, activityByKey);
   }
 
-  renderDayDetail(card, state, tasksByDate, birthdayByKey, key, allTasksByDate) {
+  renderDayDetail(card, state, tasksByDate, birthdayByKey, key, allTasksByDate, activityByKey) {
     const old = card.querySelector(".wb-daydetail");
     if (old) old.remove();
     const [y, m, d] = key.split("-").map(Number);
@@ -10372,6 +10444,8 @@ class WorkbenchPlugin extends Plugin {
     if (festAll.length) left.createDiv({ cls: "wb-dd-fest", text: "🎉 " + festAll.slice(0, 3).join(" · ") });
     const bd = birthdayByKey[key];
     if (bd && bd.length) left.createDiv({ cls: "wb-dd-bd", text: "🎂 " + bd.map(e => (e.nickname || e.name) + (e.age != null ? " " + e.age + "岁" : "") + "（" + e.label + "）").join("，") });
+    const acts = (activityByKey && activityByKey.get(key)) || [];
+    if (acts.length) left.createDiv({ cls: "wb-dd-act", text: "📍 " + acts.map(a => a.icon + " " + a.text).join("，") });
 
     const yi = lunar.getDayYi() || [];
     const ji = lunar.getDayJi() || [];
@@ -10418,6 +10492,7 @@ class WorkbenchView extends ItemView {
     this.registerEvent(this.app.metadataCache.on("changed", () => {
       this.plugin.tasksCache.stale = true;
       this.plugin.birthdayCache.stale = true;
+      this.plugin.activityCache.stale = true;
       if (this.contentEl) this.render();
     }));
   }
@@ -10544,7 +10619,7 @@ class WorkbenchSettingTab extends PluginSettingTab {
 
 /* 测试钩子（仅用于构建期自测） */
 if (typeof globalThis !== "undefined") {
-  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, bodyText, bodyHash, parseTaskTime, isoWeek, weekendRest, yearWeekends, heatmapSection, heatmapPendingDates, HEATMAP_LOG_PATH, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, fetchOpenMeteoExtra, QW_ICONS };
+  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, bodyText, bodyHash, parseTaskTime, isoWeek, weekendRest, yearWeekends, heatmapSection, heatmapPendingDates, HEATMAP_LOG_PATH, parseActivities, activityTypeOf, ACTIVITY_PRESET_TYPES, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, fetchOpenMeteoExtra, QW_ICONS };
 }
 
 module.exports = WorkbenchPlugin;

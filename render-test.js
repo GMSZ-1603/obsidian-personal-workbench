@@ -174,6 +174,12 @@ const app = {
     ]
   });
 
+  plugin.getActivities = async () => {
+    const _m = new Map();
+    _m.set("2026-09-22", [{ type: "回家", icon: "🏠", color: "#34d399", text: "回家" }]);
+    _m.set("2026-09-25", [{ type: "旅行", icon: "✈️", color: "#22d3ee", text: "旅行" }]);
+    return _m;
+  };
   const el = new FakeEl("div");
   const state = { year: 2026, month: 9, selected: "2026-09-03", loading: false };
   await plugin.renderDashboard(el, null, state);
@@ -314,6 +320,11 @@ const app = {
   check("白露", festCells.includes("白露"), festCells.join(","));
   check("秋分", festCells.includes("秋分"), festCells.join(","));
   check("中秋节", festCells.some(t => t.includes("中秋")), festCells.join(","));
+  const actCells = el.querySelectorAll(".wb-day-act").map(c => c.textContent);
+  check("日历活动标记(回家)", actCells.some(t => t.includes("回家")), actCells.join(","));
+  check("日历活动徽章", el.querySelectorAll(".wb-bg-act").length >= 2, "got " + el.querySelectorAll(".wb-bg-act").length);
+  const _legAct = el.querySelectorAll(".wb-lg-act").map(c => c.textContent);
+  check("图例含活动", _legAct.some(t => t.includes("活动")), _legAct.join(","));
   const bdCells = el.querySelectorAll(".wb-day-bd").map(c => c.textContent);
   check("日历生日显示称呼(有则含称呼)", bdCells.length === 0 || bdCells.some(t => /[爸妈姐婆]/.test(t) || /[一-龥]/.test(t)), bdCells.join(","));
   check("日历生日不显示姓名", !bdCells.some(t => t.includes("卢小南")), bdCells.join(","));
