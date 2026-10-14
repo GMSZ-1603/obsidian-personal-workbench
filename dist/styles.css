@@ -5,7 +5,7 @@
   height: 100%;
   box-sizing: border-box;
   padding: 16px 24px 20px;
-  overflow: hidden;
+
   background: linear-gradient(160deg, #0b0d13 0%, #151a28 60%, #0f1117 100%);
 }
 .wb-view-container .wb-dashboard {
@@ -179,8 +179,11 @@
   position: absolute; top: calc(100% + 6px); left: 0; width: 100%; z-index: 999;
   background: var(--wb-card-2); border: 1px solid var(--wb-line);
   border-radius: 10px; padding: 6px; box-shadow: 0 12px 40px rgba(0,0,0,.4);
-  display: none; max-height: 360px; overflow: auto;
+  display: none; max-height: 460px; overflow-y: auto; scrollbar-width: thin;
 }
+.wb-qb-drop::-webkit-scrollbar { width: 8px; }
+.wb-qb-drop::-webkit-scrollbar-thumb { background: rgba(128,132,150,.45); border-radius: 4px; }
+.wb-qb-drop::-webkit-scrollbar-track { background: transparent; }
 .wb-qb-drop.wb-show { display: block; }
 .wb-qb-item { padding: 8px 10px; border-radius: 8px; font-size: 12px; display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
 .wb-qb-item.wb-sel { background: color-mix(in srgb, var(--wb-accent) 22%, transparent); }

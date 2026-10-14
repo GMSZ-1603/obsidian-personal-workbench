@@ -1687,12 +1687,12 @@ class WorkbenchPlugin extends Plugin {
           const bs = (b.ln.includes(q) ? 2 : 0) + (kw.every(k => b.ln.includes(k)) ? 1 : 0);
           return bs - as || a.ln.localeCompare(b.ln, "zh-CN");
         })
-        .slice(0, 12)
+        .slice(0, 20)
         .map(n => ({ kind: "note", label: n.f.basename, sub: n.f.path, path: n.f.path }));
       // 命令
       const cmds = this.app.commands.listCommands()
         .filter(c => (c.name || "").toLowerCase().includes(q))
-        .slice(0, 6)
+        .slice(0, 10)
         .map(c => ({ kind: "command", label: c.name, sub: c.id, id: c.id }));
       items = [...notes, ...cmds];
       if (!items.length) {

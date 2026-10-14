@@ -131,6 +131,7 @@ const app = {
     getMarkdownFiles: () => files,
     getAllLoadedFiles: () => allFiles,
     cachedRead: async (f) => { try { return fs.readFileSync(path.join(VAULT, f.path), "utf8"); } catch (e) { return ""; } },
+    modify: async () => {},
     getAbstractFileByPath: (p) => {
       const full = path.join(VAULT, p);
       if (fs.existsSync(full)) return { path: p.replace(/\\/g, "/"), extension: path.extname(p).replace(".", "") };
@@ -324,9 +325,21 @@ const app = {
   await plugin.renderDashboard(el, null, state);
   const cells2 = el.querySelectorAll(".wb-day");
   const cl = (i) => cells2[i].className || "";
-  check("W37单休周六上班", cl(12).includes("wb-workday") && !cl(12).includes("wb-weekend"), cl(12));
-  check("W37单休周日休息", cl(13).includes("wb-weekend"), cl(13));
-  check("W38双休周六休息", cl(19).includes("wb-weekend"), cl(19));
+  // 单双轮休按 ISO 周号奇偶相对当前周交替（与插件 isRestDay 同口径），断言动态计算期望
+  function _isoWeekNum(y, m, d) {
+    const t = new Date(Date.UTC(y, m - 1, d));
+    const day = (t.getUTCDay() + 6) % 7;
+    t.setUTCDate(t.getUTCDate() - day + 3);
+    const firstThu = new Date(Date.UTC(t.getUTCFullYear(), 0, 4));
+    return 1 + Math.round(((t - firstThu) / 86400000 - 3 + ((firstThu.getUTCDay() + 6) % 7)) / 7);
+  }
+  const _nw = new Date();
+  const _wkNow = _isoWeekNum(_nw.getFullYear(), _nw.getMonth() + 1, _nw.getDate());
+  const _w37Single = (plugin.settings.sdStart === "single") === ((37 % 2) === (_wkNow % 2));
+  const _w38Single = (plugin.settings.sdStart === "single") === ((38 % 2) === (_wkNow % 2));
+  check("W37周六按单双轮休", _w37Single ? (cl(12).includes("wb-workday") && !cl(12).includes("wb-weekend")) : cl(12).includes("wb-weekend"), cl(12) + " wkNow=" + _wkNow + " w37Single=" + _w37Single);
+  check("W37周日休息(单双均休周日)", cl(13).includes("wb-weekend"), cl(13));
+  check("W38周六按单双轮休", _w38Single ? (cl(19).includes("wb-workday") && !cl(19).includes("wb-weekend")) : cl(19).includes("wb-weekend"), cl(19) + " w38Single=" + _w38Single);
   check("9/20调休补班非休息", cl(20).includes("wb-workday") && !cl(20).includes("wb-weekend"), cl(20));
   plugin.settings.restMode = "double";
   await plugin.renderDashboard(el, null, state);
