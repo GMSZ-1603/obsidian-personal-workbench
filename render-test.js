@@ -176,8 +176,8 @@ const app = {
 
   plugin.getActivities = async () => {
     const _m = new Map();
-    _m.set("2026-09-22", [{ type: "回家", icon: "🏠", color: "#34d399", text: "回家" }]);
-    _m.set("2026-09-25", [{ type: "旅行", icon: "✈️", color: "#22d3ee", text: "旅行" }]);
+    _m.set("2026-09-22", [{ name: "回家", color: "#34d399", text: "回家" }]);
+    _m.set("2026-09-25", [{ name: "旅行", color: "#22d3ee", text: "旅行" }]);
     return _m;
   };
   const el = new FakeEl("div");
