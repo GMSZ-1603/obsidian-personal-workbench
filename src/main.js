@@ -2023,7 +2023,7 @@ class WorkbenchPlugin extends Plugin {
       }
       const acts = (activityByKey && activityByKey.get(key)) || null;
       if (acts && acts.length && !festParts.length) {
-        const at = cell.createDiv({ cls: "wb-day-act", text: acts[0].text });
+        const at = cell.createDiv({ cls: "wb-day-act", text: acts.map(a => a.text).join("、") });
         if (typeof at.style.setProperty === "function") at.style.setProperty("--act-color", acts[0].color); else at.style.setProperty = acts[0].color;
       }
       const badges = cell.createDiv({ cls: "wb-day-badges" });
@@ -2043,6 +2043,7 @@ class WorkbenchPlugin extends Plugin {
       }
       const bd = birthdayByKey[key];
       if (bd && bd.length) {
+        badges.createSpan({ cls: "wb-badge wb-bg-bday", title: bd.map(e => (e.nickname || e.name) + (e.age != null ? " " + e.age + "岁" : "")).join("，") });
         cell.createDiv({ cls: "wb-day-bd", text: "🎂 " + bd.map(e => (e.nickname || e.name) + (e.age != null ? e.age + "岁" : "")).join(",") });
       }
 

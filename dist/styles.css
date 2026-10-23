@@ -27,8 +27,8 @@
   --wb-card: #ffffff;
   --wb-card-2: #f1f4f9;
   --wb-line: rgba(15,23,42,.09);
-  --wb-text: #242a3a;
-  --wb-muted: #6a7285;
+  --wb-text: #1a2130;
+  --wb-muted: #4e586c;
   --wb-danger: #ef4444;
   --wb-ok: #10b981;
   --wb-warn: #f59e0b;
@@ -94,7 +94,7 @@
 .dashboard-banner-stat-label {
   font-size: 0.7em;
   margin-top: 4px;
-  color: rgba(36,42,58,.72);
+  color: rgba(36,42,58,.82);
   letter-spacing: 0.02em;
 }
 .dashboard-banner-stat-col--left .dashboard-banner-stat-num { font-size: 1.7em; }
@@ -105,12 +105,12 @@
   flex-direction: column;
   gap: 3px;
   font-size: 0.62em;
-  color: rgba(36,42,58,.55);
+  color: rgba(36,42,58,.82);
   line-height: 1.2;
 }
 .dashboard-banner-stat-strip-item { display: flex; align-items: center; gap: 6px; }
 .dashboard-banner-stat-strip-num { font-weight: 700; color: rgba(36,42,58,.92); }
-.dashboard-banner-stat-strip-txt { color: rgba(36,42,58,.55); }
+.dashboard-banner-stat-strip-txt { color: rgba(36,42,58,.82); }
 .dashboard-banner-stat-strip-icon {
   color: var(--banner-stat-accent);
   display: flex;
@@ -127,7 +127,7 @@
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 .dashboard-banner-stat-icon svg { width: 20px; height: 20px; }
-.dashboard-banner-stat-sub { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px 16px; margin-top: 5px; font-size: 0.62em; color: rgba(36,42,58,.55); }
+.dashboard-banner-stat-sub { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px 16px; margin-top: 5px; font-size: 0.62em; color: rgba(36,42,58,.82); }
 .dashboard-banner-stat-sub-item { white-space: nowrap; }
 .dashboard-banner-stat-chart { margin-top: auto; width: 100%; display: flex; justify-content: center; }
 .dashboard-banner-heatmap {
@@ -148,7 +148,7 @@
 .dashboard-banner-heatmap-cell--today { box-shadow: 0 0 0 1.5px rgba(99,102,241,.7); }
 .dashboard-banner-stat-prog { display: flex; flex-direction: column; gap: 2px; }
 .dashboard-banner-stat-prog-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.dashboard-banner-stat-prog-title { display: flex; align-items: center; gap: 5px; font-size: 0.64em; color: rgba(36,42,58,.65); }
+.dashboard-banner-stat-prog-title { display: flex; align-items: center; gap: 5px; font-size: 0.64em; color: rgba(36,42,58,.8); }
 .dashboard-banner-stat-prog-icon { color: var(--banner-stat-accent); display: flex; align-items: center; }
 .dashboard-banner-stat-prog-icon svg { width: 14px; height: 14px; }
 .dashboard-banner-stat-prog-val { font-size: 0.82em; font-weight: 700; color: #242a3a; font-variant-numeric: tabular-nums; }
