@@ -8561,8 +8561,7 @@ const DEFAULT_SETTINGS = {
   city: "常州",
   latitude: 31.77,
   longitude: 119.97,
-  birthdayFile: "生活/生日日期.md",
-  activities: [],
+  dataFile: "生活/个人工作台数据.md",
   excludeFolders: ["图片", "Templates", "OneNote", "smart-note-agent", ".smartnotes", "微信公众号文章", "统计"],
   refreshMinutes: 10,
   qweatherKey: "",
@@ -8922,6 +8921,132 @@ async function scanTasks(app, settings) {
   return tasks;
 }
 
+
+/* ---------------- 个人工作台数据笔记（统一数据源：生日/单双休/生活安排） ---------------- */
+const DATA_FILE_DEFAULT = "生活/个人工作台数据.md";
+const LIFE_DEFAULT_COLOR = "#c084fc";
+
+/* 表格行 -> 单元格数组 */
+function tableCells(line) {
+  const a = String(line).split("|").map(x => x.trim());
+  if (a.length && a[0] === "") a.shift();
+  if (a.length && a[a.length - 1] === "") a.pop();
+  return a.filter((x, i) => !(i === 0 && x === "") && !(i === a.length - 1 && x === "")).length ? a : a.filter(x => x !== "");
+}
+
+/* 生活安排日期列：支持 "20261002-07"、"20261007、14、21、28"、"20261002" 及逗号/顿号多段 */
+function pushDateRange(out, y1, mo1, d1, y2, mo2, d2) {
+  const st = new Date(y1, mo1 - 1, d1), en = new Date(y2, mo2 - 1, d2);
+  if (isNaN(st.getTime()) || isNaN(en.getTime()) || en < st) return;
+  for (let d = new Date(st); d <= en; d.setDate(d.getDate() + 1)) {
+    out.push(fmtDate(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+  }
+}
+function expandLifeDates(str, defYear) {
+  const out = [];
+  let lastPrefix = "";
+  const segs = String(str || "").split(/[、,，;；]/).map(x => x.trim()).filter(Boolean);
+  for (const seg of segs) {
+    let m = seg.match(/^(\d{4})(\d{2})(\d{2})(?:\s*-\s*(\d{2,8}))?$/);
+    if (m) {
+      const y1 = +m[1], mo1 = +m[2], d1 = +m[3];
+      let y2 = y1, mo2 = mo1, d2 = d1;
+      if (m[4]) {
+        const e = m[4];
+        if (e.length === 2) { d2 = +e; }
+        else if (e.length === 4) { mo2 = +e.slice(0, 2); d2 = +e.slice(2); }
+        else if (e.length === 8) { y2 = +e.slice(0, 4); mo2 = +e.slice(4, 6); d2 = +e.slice(6); }
+        else continue;
+      }
+      pushDateRange(out, y1, mo1, d1, y2, mo2, d2);
+      lastPrefix = String(y1) + String(mo1).padStart(2, "0");
+      continue;
+    }
+    m = seg.match(/^(\d{2,4})$/);
+    if (m && lastPrefix) {
+      const v = m[1], y = +lastPrefix.slice(0, 4), mo = +lastPrefix.slice(4, 6);
+      if (v.length === 2) pushDateRange(out, y, mo, +v, y, mo, +v);
+      else if (v.length === 4) { const mo2 = +v.slice(0, 2), d2 = +v.slice(2); pushDateRange(out, y, mo2, d2, y, mo2, d2); }
+    }
+  }
+  return out;
+}
+function parseLifeRow(cells, year, map) {
+  const dates = cells[0], name = (cells[1] || "").trim();
+  if (!dates || !name) return;
+  for (const key of expandLifeDates(dates, year)) {
+    if (!map.has(key)) map.set(key, []);
+    const arr = map.get(key);
+    if (!arr.some(x => x.name === name)) arr.push({ name, color: LIFE_DEFAULT_COLOR, text: name });
+  }
+}
+function parseRestRow(cells, year, weekRest) {
+  const wk = String(cells[0]).trim();
+  const rest = String(cells[2] || "").replace(/、/g, "，");
+  if (!/^\d+$/.test(wk) || !rest) return;
+  const hasSat = rest.includes("周六"), hasSun = rest.includes("周日");
+  if (hasSat && hasSun) weekRest[String(year)][wk] = "double";
+  else if (hasSat) weekRest[String(year)][wk] = "sat";
+  else if (hasSun) weekRest[String(year)][wk] = "sun";
+}
+
+/* 解析【个人工作台数据】笔记 -> { birthdays, weekRest, lifeMap } */
+function parseDataFile(content) {
+  const res = { birthdays: [], weekRest: {}, lifeMap: new Map() };
+  const blocks = {};
+  let cur = null;
+  for (const raw of String(content || "").split(/\r?\n/)) {
+    const hm = raw.match(/^##\s+(.+)$/);
+    if (hm) { cur = hm[1].trim(); blocks[cur] = blocks[cur] || []; continue; }
+    if (cur) blocks[cur].push(raw);
+  }
+  // 生日日期（兼容旧列表格式）
+  for (const line of blocks["生日日期"] || []) {
+    let l = line.trim().replace(/^[-*+]\s+/, "");
+    if (!l || l.startsWith("#") || l.startsWith("---")) continue;
+    const parts = l.split(/[，,]/);
+    if (parts.length < 2) continue;
+    const name = parts[0].trim();
+    let nickname = null, dateStr;
+    if (parts.length >= 3) { nickname = parts[1].trim(); dateStr = parts.slice(2).join("，").trim(); }
+    else { dateStr = parts.slice(1).join("，").trim(); }
+    const parsed = parseBirthdayDate(dateStr);
+    if (!parsed || !name) continue;
+    res.birthdays.push({ name, nickname: nickname || name, ...parsed, dateRaw: dateStr });
+  }
+  // 单双休安排（### 年度 + 表格）
+  let curYear = new Date().getFullYear();
+  for (const line of blocks["单双休安排"] || []) {
+    const ym = line.match(/^###\s*(\d{4})年?\s*$/);
+    if (ym) { curYear = +ym[1]; res.weekRest[String(curYear)] = res.weekRest[String(curYear)] || {}; continue; }
+    const c = tableCells(line);
+    if (c.length >= 3 && /^\d+$/.test(String(c[0])) && c[2]) {
+      res.weekRest[String(curYear)] = res.weekRest[String(curYear)] || {};
+      parseRestRow(c, curYear, res.weekRest);
+    }
+  }
+  // 生活安排（### 年度 + 表格）
+  curYear = new Date().getFullYear();
+  for (const line of blocks["生活安排"] || []) {
+    const ym = line.match(/^###\s*(\d{4})年?\s*$/);
+    if (ym) { curYear = +ym[1]; continue; }
+    const c = tableCells(line);
+    if (c.length >= 2 && c[0] && c[1]) parseLifeRow(c, curYear, res.lifeMap);
+  }
+  return res;
+}
+
+/* 单双休表判定：restMap[year][wk] = "double"|"sat"|"sun"，缺省双休；dow 0=周日 6=周六 */
+function restFromTable(restMap, y, m, d, dow) {
+  const yr = restMap && restMap[String(y)];
+  if (!yr) return true;
+  const wk = String(isoWeek(y, m, d));
+  const v = yr[wk];
+  if (v === "sun") return dow === 0;
+  if (v === "sat") return dow === 6;
+  return true;
+}
+
 async function scanBirthdays(app, settings) {
   const f = app.vault.getAbstractFileByPath(settings.birthdayFile);
   if (!f || f.extension !== "md") return [];
@@ -9134,6 +9259,7 @@ class WorkbenchPlugin extends Plugin {
     this.weatherCache = { data: null, stale: true };
     this.extraCache = { data: null, stale: true };
     this.activityCache = { data: null, stale: true };
+    this.dataCache = { data: null, stale: true };
     this._restoreWeatherCaches();
 
     // 独立视图（个人工作台页签）
@@ -9366,20 +9492,28 @@ class WorkbenchPlugin extends Plugin {
   async getBirthdays(force) {
     const c = this.birthdayCache;
     if (c.data && c.data.length && !c.stale && !force) return c.data;
-    try { c.data = await scanBirthdays(this.app, this.settings); }
-    catch (e) { console.error("workbench scanBirthdays", e); }
+    try { c.data = (await this.getData(force)).birthdays || []; }
+    catch (e) { console.error("workbench birthdays from dataFile", e); }
     c.stale = false;
     return c.data || [];
   }
 
-  async getActivities(force) {
-    const c = this.activityCache;
+  async getData(force) {
+    if (!this.dataCache) this.dataCache = { data: null, stale: true };
+    const c = this.dataCache;
     if (c.data && !c.stale && !force) return c.data;
-    try { c.data = buildActivityMap(this.settings.activities); }
-    catch (e) { console.error("workbench buildActivityMap", e); }
+    try {
+      const fp = this.settings.dataFile || DATA_FILE_DEFAULT;
+      const f = this.app.vault.getAbstractFileByPath(fp);
+      let content = "";
+      if (f && f.extension === "md") { try { content = await this.app.vault.cachedRead(f); } catch (e) {} }
+      c.data = parseDataFile(content);
+    } catch (e) { console.error("workbench parseDataFile", e); }
     c.stale = false;
-    return c.data || new Map();
+    return c.data || { birthdays: [], weekRest: {}, lifeMap: new Map() };
   }
+  async getWeekRest(force) { const d = await this.getData(force); return d.weekRest || {}; }
+  async getLifeActivities(force) { const d = await this.getData(force); return d.lifeMap || new Map(); }
 
   async getWeather(force) {
     const c = this.weatherCache;
@@ -9780,7 +9914,8 @@ class WorkbenchPlugin extends Plugin {
       this.getBirthdays(),
       this.getWeather(),
       this.getWeatherExtra(),
-      this.getActivities()
+      this.getLifeActivities(),
+      this.getData()
     ]);
 
     // 任务按日期索引（日历徽标/左栏今日任务只统计未完成任务；当天详情右侧显示全部含已完成）
@@ -10318,7 +10453,7 @@ class WorkbenchPlugin extends Plugin {
     legend.createSpan({ text: "● 节日", cls: "wb-lg-fest" });
     legend.createSpan({ text: "● 节气", cls: "wb-lg-term" });
     legend.createSpan({ text: "● 假期", cls: "wb-lg-holiday" });
-    legend.createSpan({ text: "● 活动", cls: "wb-lg-act" });
+    legend.createSpan({ text: "● 生活", cls: "wb-lg-act" });
 
     // 网格
     const grid = card.createDiv({ cls: "wb-cal-grid" });
@@ -10368,7 +10503,8 @@ class WorkbenchPlugin extends Plugin {
       if (hol !== undefined && hol !== null) cell.addClass("wb-holiday");
       else if (hol === null) cell.addClass("wb-workday");
       else if (dow === 0 || dow === 6) {
-        if (weekendRest(this.settings, c.y, c.m, c.d, dow)) cell.addClass("wb-weekend");
+        const _rest = this.dataCache && this.dataCache.data ? this.dataCache.data.weekRest : null;
+        if (restFromTable(_rest, c.y, c.m, c.d, dow)) cell.addClass("wb-restday");
         else cell.addClass("wb-workday");
       }
 
@@ -10492,6 +10628,7 @@ class WorkbenchView extends ItemView {
       this.plugin.tasksCache.stale = true;
       this.plugin.birthdayCache.stale = true;
       this.plugin.activityCache.stale = true;
+      this.plugin.dataCache.stale = true;
       if (this.contentEl) this.render();
     }));
   }
@@ -10540,8 +10677,8 @@ class WorkbenchSettingTab extends PluginSettingTab {
         const n = parseFloat(v); if (!isNaN(n)) { this.plugin.settings.longitude = n; this.plugin.weatherCache.stale = true; await this.plugin.saveSettings(); }
       }));
 
-    new Setting(containerEl).setName("生日文件").setDesc("存放「姓名，农历月日」的笔记路径（相对库根目录）")
-      .addText(t => t.setValue(this.plugin.settings.birthdayFile).onChange(async v => { this.plugin.settings.birthdayFile = v; this.plugin.birthdayCache.stale = true; await this.plugin.saveSettings(); }));
+    new Setting(containerEl).setName("数据文件").setDesc("统一数据源笔记路径（相对库根目录），含「## 生日日期」「## 单双休安排」「## 生活安排」三个区块")
+      .addText(t => t.setValue(this.plugin.settings.dataFile).onChange(async v => { this.plugin.settings.dataFile = v.trim() || DATA_FILE_DEFAULT; this.plugin.dataCache.stale = true; this.plugin.birthdayCache.stale = true; await this.plugin.saveSettings(); }));
 
     new Setting(containerEl).setName("任务排除文件夹").setDesc("扫描任务时排除的文件夹，逗号分隔")
       .addText(t => t.setValue(this.plugin.settings.excludeFolders.join(",")).onChange(async v => {
@@ -10560,52 +10697,7 @@ class WorkbenchSettingTab extends PluginSettingTab {
       .addToggle(t => t.setValue(this.plugin.settings.openOnStartup).onChange(async v => { this.plugin.settings.openOnStartup = v; await this.plugin.saveSettings(); }));
 
     containerEl.createEl("h3", { text: "轮休设置" });
-    new Setting(containerEl).setName("周末休息模式").setDesc("单双轮休：单休周只休一天，按奇偶周交替；手动：逐个周末指定")
-      .addDropdown(dd => dd.addOption("double", "每周双休").addOption("single-double", "单双轮休").addOption("manual", "手动逐周")
-        .setValue(this.plugin.settings.restMode)
-        .onChange(async v => { this.plugin.settings.restMode = v; await this.plugin.saveSettings(); }));
-    new Setting(containerEl).setName("单休周休息日").setDesc("单休周休哪一天（另一天上班）")
-      .addDropdown(dd => dd.addOption("sat", "休周六").addOption("sun", "休周日")
-        .setValue(this.plugin.settings.singleDay)
-        .onChange(async v => { this.plugin.settings.singleDay = v; await this.plugin.saveSettings(); }));
-    new Setting(containerEl).setName("当前周状态").setDesc("本周是单休还是双休，轮休按此顺序往下交替")
-      .addDropdown(dd => dd.addOption("single", "本周单休").addOption("double", "本周双休")
-        .setValue(this.plugin.settings.sdStart)
-        .onChange(async v => { this.plugin.settings.sdStart = v; await this.plugin.saveSettings(); }));
-    // 手动轮休表：折叠 + 年份切换 + 全年周列表
-    const _det = containerEl.createEl("details", { cls: "wb-rest-details" });
-    _det.createEl("summary", { text: "手动轮休表（全年逐周，点击展开）", cls: "wb-rest-summary" });
-    const _curYear = new Date().getFullYear();
-    let _selYear = _curYear;
-    const _mw = this.plugin.settings.manualWeeks || (this.plugin.settings.manualWeeks = {});
-    const _renderWeeks = () => {
-      _det.querySelectorAll(".wb-rest-week").forEach(e => e.remove());
-      const mwYear = _mw[String(_selYear)] || (_mw[String(_selYear)] = {});
-      const wends = yearWeekends(_selYear);
-      Object.keys(wends).sort((a, b) => +a - +b).forEach(wk => {
-        const [sat, sun] = wends[wk];
-        const _label = (sat.getMonth() + 1) + "/" + sat.getDate() + " - " + (sun.getMonth() + 1) + "/" + sun.getDate() + "（第" + wk + "周）";
-        new Setting(_det).setName(_label).setClass("wb-rest-week")
-          .addDropdown(dd => dd.addOption("double", "双休").addOption("sat", "只休周六").addOption("sun", "只休周日")
-            .setValue(mwYear[String(wk)] || "double")
-            .onChange(async v => { mwYear[String(wk)] = v; await this.plugin.saveSettings(); }));
-      });
-    };
-    new Setting(_det).setName("年份").setDesc("切换年份查看/配置该年轮休表（每年独立保存）")
-      .addDropdown(dd => {
-        for (let y = _curYear - 1; y <= _curYear + 2; y++) dd.addOption(String(y), String(y) + "年");
-        return dd.setValue(String(_selYear)).onChange(async v => { _selYear = +v; _renderWeeks(); });
-      })
-      .addButton(b => b.setButtonText("复制上一年").onClick(async () => {
-        const src = _mw[String(_selYear - 1)] || {};
-        _mw[String(_selYear)] = JSON.parse(JSON.stringify(src));
-        await this.plugin.saveSettings(); _renderWeeks();
-      }))
-      .addButton(b => b.setButtonText("清空全年").onClick(async () => {
-        _mw[String(_selYear)] = {};
-        await this.plugin.saveSettings(); _renderWeeks();
-      }));
-    _renderWeeks();
+    containerEl.createEl("div", { cls: "wb-set-note", text: "单双休由「数据文件 → ## 单双休安排」表格读取（每周一行：周期 / 日期 / 休息日）。休息日列填「周日」=单休，填「周六、周日」=双休。" });
 
     containerEl.createEl("h3", { text: "模块开关" });
     ["bannerEnabled", "queryEnabled", "weatherEnabled", "yearProgressEnabled", "todayTasksEnabled", "birthdaysEnabled", "calendarEnabled"].forEach(k => {
@@ -10614,52 +10706,18 @@ class WorkbenchSettingTab extends PluginSettingTab {
         .addToggle(t => t.setValue(this.plugin.settings[k]).onChange(async v => { this.plugin.settings[k] = v; await this.plugin.saveSettings(); }));
     });
 
-    this.renderActivities(containerEl);
+    this.renderActivitiesNote(containerEl);
   }
 
-  renderActivities(containerEl) {
-    containerEl.createEl("h3", { text: "日历活动" });
-    containerEl.createEl("div", { cls: "wb-set-note", text: "在日历上显示的活动（回家、旅行、加班等）。日期支持单日 20261001 或范围 20261001-20261005；颜色自选，用于在日历上区分（默认紫色，与任务/生日/节日/节气/假期不同）。" });
-    const list = this.plugin.settings.activities || [];
-    if (!list.length) {
-      new Setting(containerEl).setName("暂无活动").setDesc("点击下方按钮添加第一个活动");
-    }
-    list.forEach((a, i) => {
-      const st = new Setting(containerEl).setName("活动 " + (i + 1));
-      st.addText(t => t.setPlaceholder("日期 20261001").setValue(a.date).onChange(async v => {
-        this.plugin.settings.activities[i].date = v.trim();
-        this.plugin.activityCache.stale = true;
-        await this.plugin.saveSettings();
-      }));
-      st.addText(t => t.setPlaceholder("名称 如 回家").setValue(a.name).onChange(async v => {
-        this.plugin.settings.activities[i].name = v.trim();
-        this.plugin.activityCache.stale = true;
-        await this.plugin.saveSettings();
-      }));
-      st.addColor(cb => cb.setValue(a.color || ACTIVITY_DEFAULT_COLOR).onChange(async v => {
-        this.plugin.settings.activities[i].color = v;
-        this.plugin.activityCache.stale = true;
-        await this.plugin.saveSettings();
-      }));
-      st.addButton(b => b.setButtonText("删除").setWarning().onClick(async () => {
-        this.plugin.settings.activities.splice(i, 1);
-        this.plugin.activityCache.stale = true;
-        await this.plugin.saveSettings();
-        this.display();
-      }));
-    });
-    new Setting(containerEl).addButton(b => b.setButtonText("＋ 添加活动").setCta().onClick(async () => {
-      this.plugin.settings.activities.push({ date: "", name: "", color: ACTIVITY_DEFAULT_COLOR });
-      this.plugin.activityCache.stale = true;
-      await this.plugin.saveSettings();
-      this.display();
-    }));
+  renderActivitiesNote(containerEl) {
+    containerEl.createEl("h3", { text: "生活安排" });
+    containerEl.createEl("div", { cls: "wb-set-note", text: "生活安排（回家、旅行、老爸休息等）由「数据文件 → ## 生活安排」表格读取。表格两列：日期 / 名称。日期支持 20261001（单日）、20261002-07（范围）、20261007、14、21、28（多段，后续省略年月）。日历以紫色「● 生活」显示，日期详情可见当天生活安排。" });
   }
 }
 
 /* 测试钩子（仅用于构建期自测） */
 if (typeof globalThis !== "undefined") {
-  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, bodyText, bodyHash, parseTaskTime, isoWeek, weekendRest, yearWeekends, heatmapSection, heatmapPendingDates, HEATMAP_LOG_PATH, expandActivityDates, buildActivityMap, ACTIVITY_DEFAULT_COLOR, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, fetchOpenMeteoExtra, QW_ICONS };
+  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, bodyText, bodyHash, parseTaskTime, isoWeek, weekendRest, yearWeekends, heatmapSection, heatmapPendingDates, HEATMAP_LOG_PATH, expandActivityDates, buildActivityMap, ACTIVITY_DEFAULT_COLOR, expandLifeDates, parseDataFile, restFromTable, parseLifeRow, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, fetchOpenMeteoExtra, QW_ICONS };
 }
 
 module.exports = WorkbenchPlugin;

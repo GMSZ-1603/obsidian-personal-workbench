@@ -174,7 +174,7 @@ const app = {
     ]
   });
 
-  plugin.getActivities = async () => {
+  plugin.getLifeActivities = async () => {
     const _m = new Map();
     _m.set("2026-09-22", [{ name: "回家", color: "#34d399", text: "回家" }]);
     _m.set("2026-09-25", [{ name: "旅行", color: "#22d3ee", text: "旅行" }]);
@@ -324,7 +324,7 @@ const app = {
   check("日历活动标记(回家)", actCells.some(t => t.includes("回家")), actCells.join(","));
   check("日历活动徽章", el.querySelectorAll(".wb-bg-act").length >= 2, "got " + el.querySelectorAll(".wb-bg-act").length);
   const _legAct = el.querySelectorAll(".wb-lg-act").map(c => c.textContent);
-  check("图例含活动", _legAct.some(t => t.includes("活动")), _legAct.join(","));
+  check("图例含生活", _legAct.some(t => t.includes("生活")), _legAct.join(","));
   const bdCells = el.querySelectorAll(".wb-day-bd").map(c => c.textContent);
   check("日历生日显示称呼(有则含称呼)", bdCells.length === 0 || bdCells.some(t => /[爸妈姐婆]/.test(t) || /[一-龥]/.test(t)), bdCells.join(","));
   check("日历生日不显示姓名", !bdCells.some(t => t.includes("卢小南")), bdCells.join(","));
@@ -346,13 +346,10 @@ const app = {
   }
   const _nw = new Date();
   const _wkNow = _isoWeekNum(_nw.getFullYear(), _nw.getMonth() + 1, _nw.getDate());
-  const _w37Single = (plugin.settings.sdStart === "single") === ((37 % 2) === (_wkNow % 2));
-  const _w38Single = (plugin.settings.sdStart === "single") === ((38 % 2) === (_wkNow % 2));
-  check("W37周六按单双轮休", _w37Single ? (cl(12).includes("wb-workday") && !cl(12).includes("wb-weekend")) : cl(12).includes("wb-weekend"), cl(12) + " wkNow=" + _wkNow + " w37Single=" + _w37Single);
-  check("W37周日休息(单双均休周日)", cl(13).includes("wb-weekend"), cl(13));
-  check("W38周六按单双轮休", _w38Single ? (cl(19).includes("wb-workday") && !cl(19).includes("wb-weekend")) : cl(19).includes("wb-weekend"), cl(19) + " w38Single=" + _w38Single);
-  check("9/20调休补班非休息", cl(20).includes("wb-workday") && !cl(20).includes("wb-weekend"), cl(20));
-  plugin.settings.restMode = "double";
+  check("W37周六单休周上班", cl(12).includes("wb-workday") && !cl(12).includes("wb-restday"), cl(12));
+  check("W37周日休息", cl(13).includes("wb-restday"), cl(13));
+  check("W38周六双休周休息", cl(19).includes("wb-restday"), cl(19));
+  check("9/20调休补班非休息", cl(20).includes("wb-workday") && !cl(20).includes("wb-restday"), cl(20));
   await plugin.renderDashboard(el, null, state);
 
   console.log("== 日期详情(黄历) ==");

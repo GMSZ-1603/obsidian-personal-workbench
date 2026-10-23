@@ -113,5 +113,32 @@ console.log("== 活动解析(设置版) ==");
   eq("map 非法色默认", (T.buildActivityMap([{ date: "20261001", name: "x", color: "red" }]).get("2026-10-01") || [])[0].color, T.ACTIVITY_DEFAULT_COLOR);
 }
 
+console.log("== 数据解析(笔记版) ==");
+{
+  const d = T.expandLifeDates;
+  eq("生活缩位范围", JSON.stringify(d("20261002-07", 2026)), JSON.stringify(["2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06", "2026-10-07"]));
+  eq("生活多段级联", JSON.stringify(d("20261007、14、21、28", 2026)), JSON.stringify(["2026-10-07", "2026-10-14", "2026-10-21", "2026-10-28"]));
+  eq("生活单日", JSON.stringify(d("20261001", 2026)), JSON.stringify(["2026-10-01"]));
+  eq("生活跨年范围", JSON.stringify(d("20261230-20270102", 2026)), JSON.stringify(["2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02"]));
+  eq("生活空输入", JSON.stringify(d("", 2026)), "[]");
+  const sample = "## 生日日期\n卢小南，爸爸，一九六四年八月十二\n张玉轩，轩轩，\n\n## 单双休安排\n### 2026年\n\n| 周期  |    日期     |  休息日  |\n| :-: | :-------: | :---: |\n| 41  | 1010-1011 |  周日   |\n| 42  | 1017-1018 | 周六、周日 |\n\n## 生活安排\n### 2026年\n\n| 日期                | 生活   |\n| ----------------- | ---- |\n| 20261002-07       | 回盱眙  |\n| 20261007、14、21、28 | 老爸休息 |";
+  const df = T.parseDataFile(sample);
+  eq("生日农历年解析", df.birthdays[0].type + ":" + df.birthdays[0].month + ":" + df.birthdays[0].day + ":" + df.birthdays[0].lunarYear + ":" + df.birthdays[0].nickname, "lunar:8:12:1964:爸爸");
+  eq("生日无日期跳过", df.birthdays.length, 1);
+  eq("单双休 41 单休", df.weekRest["2026"]["41"], "sun");
+  eq("单双休 42 双休", df.weekRest["2026"]["42"], "double");
+  const lm = df.lifeMap;
+  eq("生活范围首日", JSON.stringify((lm.get("2026-10-02") || []).map(a => a.name)), JSON.stringify(["回盱眙"]));
+  eq("生活范围末日+多段首日", JSON.stringify((lm.get("2026-10-07") || []).map(a => a.name)), JSON.stringify(["回盱眙", "老爸休息"]));
+  eq("生活多段集", JSON.stringify((lm.get("2026-10-21") || []).map(a => a.name)), JSON.stringify(["老爸休息"]));
+  const rt = T.restFromTable;
+  eq("休息表 41周六单休上班", rt(df.weekRest, 2026, 10, 10, 6), false);
+  eq("休息表 41周日单休休息", rt(df.weekRest, 2026, 10, 11, 0), true);
+  eq("休息表 42周六双休休息", rt(df.weekRest, 2026, 10, 17, 6), true);
+  eq("休息表 单休周六上班", rt({ "2026": { "41": "sun" } }, 2026, 10, 10, 6), false);
+  eq("休息表 双休周周日", rt({ "2026": { "42": "double" } }, 2026, 10, 18, 0), true);
+  eq("休息表 缺省双休", rt(null, 2026, 10, 17, 6), true);
+}
+
 console.log(`\n通过 ${pass} / ${pass + fail}`);
 process.exit(fail ? 1 : 0);
