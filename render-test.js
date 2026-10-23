@@ -343,6 +343,28 @@ const app = {
   check("日历生日显示称呼(有则含称呼)", bdCells.length === 0 || bdCells.some(t => /[爸妈姐婆]/.test(t) || /[一-龥]/.test(t)), bdCells.join(","));
   check("日历生日不显示姓名", !bdCells.some(t => t.includes("卢小南")), bdCells.join(","));
 
+  console.log("== 任务徽章保留 ==");
+  const _dayCell = (num) => [...el.querySelectorAll(".wb-day")].find(c => c.querySelector(".wb-day-num") && c.querySelector(".wb-day-num").textContent === num);
+  plugin.getTasks = async () => [
+    { file: "a.md", text: "未完成任务", raw: "", done: false, scheduled: "2026-09-15", due: null, date: "2026-09-15" },
+    { file: "b.md", text: "已完成任务", raw: "", done: true, scheduled: "2026-09-15", due: null, date: "2026-09-15" }
+  ];
+  state.year = 2026; state.month = 9; state.selected = "2026-09-15";
+  await plugin.renderDashboard(el, null, state);
+  const _d15 = _dayCell("15");
+  const _t15 = _d15 && _d15.querySelector(".wb-day-tcnt");
+  check("部分完成后任务徽章保留", !!(_d15 && _d15.querySelector(".wb-bg-task")), "no badge");
+  check("数字=未完成数(1)", _t15 && _t15.textContent === "1", _t15 && _t15.textContent);
+  plugin.getTasks = async () => [
+    { file: "b.md", text: "已完成任务", raw: "", done: true, scheduled: "2026-09-15", due: null, date: "2026-09-15" }
+  ];
+  await plugin.renderDashboard(el, null, state);
+  const _d15b = _dayCell("15");
+  const _t15b = _d15b && _d15b.querySelector(".wb-day-tcnt");
+  check("全部完成后任务徽章仍保留", !!(_d15b && _d15b.querySelector(".wb-bg-task")), "no badge");
+  check("全部完成后数字为0", _t15b && _t15b.textContent === "0", _t15b && _t15b.textContent);
+  state.selected = "2026-09-03";
+
   console.log("== 轮休(单双) ==");
   plugin.settings.restMode = "single-double";
   plugin.settings.singleDay = "sun";

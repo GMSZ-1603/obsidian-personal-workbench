@@ -10539,11 +10539,12 @@ class WorkbenchPlugin extends Plugin {
         const ab = badges.createSpan({ cls: "wb-badge wb-bg-act", title: acts.map(a => a.text).join("，") });
         if (typeof ab.style.setProperty === "function") ab.style.setProperty("--act-color", acts[0].color); else ab.style.setProperty = acts[0].color;
       }
-      const tasks = tasksByDate[key];
-      if (tasks && tasks.length) {
-        badges.createSpan({ cls: "wb-badge wb-bg-task", title: `${tasks.length} 个任务` });
-        const cnt = cell.createDiv({ cls: "wb-day-tcnt", text: String(tasks.length) });
-        const hasOverdue = tasks.some(t => t.date < todayStr());
+      const allT = allTasksByDate[key];
+      const activeT = tasksByDate[key] || [];
+      if (allT && allT.length) {
+        badges.createSpan({ cls: "wb-badge wb-bg-task", title: `${allT.length} 个任务（${activeT.length} 未完成）` });
+        const cnt = cell.createDiv({ cls: "wb-day-tcnt", text: String(activeT.length) });
+        const hasOverdue = activeT.some(t => t.date < todayStr());
         if (hasOverdue) cnt.addClass("wb-overdue");
       }
       const bd = birthdayByKey[key];
