@@ -92,22 +92,25 @@ console.log("== 热力图记录笔记 ==");
 console.log("== 活动解析(设置版) ==");
 {
   const d = T.expandActivityDates;
-  eq("单日", JSON.stringify(d("2026-10-01")), JSON.stringify(["2026-10-01"]));
-  eq("范围~", JSON.stringify(d("2026-10-02~2026-10-05")), JSON.stringify(["2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05"]));
-  eq("范围至", JSON.stringify(d("2026-10-02至2026-10-04")), JSON.stringify(["2026-10-02", "2026-10-03", "2026-10-04"]));
-  eq("跨年范围", JSON.stringify(d("2026-12-30~2027-01-02")), JSON.stringify(["2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02"]));
+  eq("新格式单日", JSON.stringify(d("20261001")), JSON.stringify(["2026-10-01"]));
+  eq("新格式范围-", JSON.stringify(d("20261002-20261005")), JSON.stringify(["2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05"]));
+  eq("旧格式单日", JSON.stringify(d("2026-10-01")), JSON.stringify(["2026-10-01"]));
+  eq("旧格式范围~", JSON.stringify(d("2026-10-02~2026-10-05")), JSON.stringify(["2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05"]));
+  eq("旧格式范围至", JSON.stringify(d("2026-10-02至2026-10-04")), JSON.stringify(["2026-10-02", "2026-10-03", "2026-10-04"]));
+  eq("新格式跨年", JSON.stringify(d("20261230-20270102")), JSON.stringify(["2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02"]));
+  eq("旧格式跨年", JSON.stringify(d("2026-12-30~2027-01-02")), JSON.stringify(["2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02"]));
   eq("非法返回空", JSON.stringify(d("abc")), "[]");
   eq("空输入返回空", JSON.stringify(d("")), "[]");
   const acts = [
-    { date: "2026-10-01", name: "回家", color: "#34d399" },
-    { date: "2026-10-02~2026-10-03", name: "旅行", color: "#22d3ee" }
+    { date: "20261001", name: "回家", color: "#34d399" },
+    { date: "20261002-20261003", name: "旅行", color: "#22d3ee" }
   ];
   const m = T.buildActivityMap(acts);
-  eq("map 单日", JSON.stringify((m.get("2026-10-01") || []).map(a => a.name)), JSON.stringify(["回家"]));
-  eq("map 范围展开", JSON.stringify((m.get("2026-10-03") || []).map(a => a.name)), JSON.stringify(["旅行"]));
+  eq("map 新格式单日", JSON.stringify((m.get("2026-10-01") || []).map(a => a.name)), JSON.stringify(["回家"]));
+  eq("map 新格式范围", JSON.stringify((m.get("2026-10-03") || []).map(a => a.name)), JSON.stringify(["旅行"]));
   eq("map 颜色保留", (m.get("2026-10-01") || [])[0].color, "#34d399");
-  eq("map 空名跳过", T.buildActivityMap([{ date: "2026-10-01", name: "  " }]).size, 0);
-  eq("map 非法色默认", (T.buildActivityMap([{ date: "2026-10-01", name: "x", color: "red" }]).get("2026-10-01") || [])[0].color, T.ACTIVITY_DEFAULT_COLOR);
+  eq("map 空名跳过", T.buildActivityMap([{ date: "20261001", name: "  " }]).size, 0);
+  eq("map 非法色默认", (T.buildActivityMap([{ date: "20261001", name: "x", color: "red" }]).get("2026-10-01") || [])[0].color, T.ACTIVITY_DEFAULT_COLOR);
 }
 
 console.log(`\n通过 ${pass} / ${pass + fail}`);

@@ -460,7 +460,21 @@ function expandActivityDates(dateStr) {
   const out = [];
   const str = String(dateStr || "").trim();
   if (!str) return out;
-  const m = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s*[~至到]\s*(\d{4})?[-/](\d{1,2})[-/](\d{1,2}))?$/);
+  // 新格式：YYYYMMDD 单日 / YYYYMMDD-YYYYMMDD 范围（8 位无分隔，范围用 -）
+  let m = str.match(/^(\d{4})(\d{2})(\d{2})(?:\s*-\s*(\d{4})(\d{2})(\d{2}))?$/);
+  if (m) {
+    const y1 = Number(m[1]), mo1 = Number(m[2]), d1 = Number(m[3]);
+    const y2 = m[4] ? Number(m[4]) : y1, mo2 = Number(m[5] || m[2]), d2 = Number(m[6] || m[3]);
+    const start = new Date(y1, mo1 - 1, d1);
+    const end = new Date(y2, mo2 - 1, d2);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return out;
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      out.push(fmtDate(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+    }
+    return out;
+  }
+  // 兼容旧格式：YYYY-MM-DD 单日 / YYYY-MM-DD~YYYY-MM-DD 或 YYYY-MM-DD至YYYY-MM-DD 范围
+  m = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s*[~至到]\s*(\d{4})?[-/](\d{1,2})[-/](\d{1,2}))?$/);
   if (!m) return out;
   const y1 = Number(m[1]), m1 = Number(m[2]), d1 = Number(m[3]);
   const y2 = m[4] ? Number(m[4]) : y1, m2 = Number(m[5] || m[2]), d2 = Number(m[6] || m[3]);
@@ -2109,14 +2123,14 @@ class WorkbenchSettingTab extends PluginSettingTab {
 
   renderActivities(containerEl) {
     containerEl.createEl("h3", { text: "日历活动" });
-    containerEl.createEl("div", { cls: "wb-set-note", text: "在日历上显示的活动（回家、旅行、加班等）。日期支持单日 2026-10-01 或范围 2026-10-02~2026-10-05；颜色自选，用于在日历上区分（默认紫色，与任务/生日/节日/节气/假期不同）。" });
+    containerEl.createEl("div", { cls: "wb-set-note", text: "在日历上显示的活动（回家、旅行、加班等）。日期支持单日 20261001 或范围 20261001-20261005；颜色自选，用于在日历上区分（默认紫色，与任务/生日/节日/节气/假期不同）。" });
     const list = this.plugin.settings.activities || [];
     if (!list.length) {
       new Setting(containerEl).setName("暂无活动").setDesc("点击下方按钮添加第一个活动");
     }
     list.forEach((a, i) => {
       const st = new Setting(containerEl).setName("活动 " + (i + 1));
-      st.addText(t => t.setPlaceholder("日期 2026-10-01").setValue(a.date).onChange(async v => {
+      st.addText(t => t.setPlaceholder("日期 20261001").setValue(a.date).onChange(async v => {
         this.plugin.settings.activities[i].date = v.trim();
         this.plugin.activityCache.stale = true;
         await this.plugin.saveSettings();
