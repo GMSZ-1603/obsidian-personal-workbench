@@ -2022,7 +2022,7 @@ class WorkbenchPlugin extends Plugin {
         cell.createDiv({ cls: "wb-day-lunar", text: lunar.getDayInChinese() });
       }
       const acts = (activityByKey && activityByKey.get(key)) || null;
-      if (acts && acts.length && !festParts.length) {
+      if (acts && acts.length) {
         const at = cell.createDiv({ cls: "wb-day-act", text: acts.map(a => a.text).join("、") });
         if (typeof at.style.setProperty === "function") at.style.setProperty("--act-color", acts[0].color); else at.style.setProperty = acts[0].color;
       }

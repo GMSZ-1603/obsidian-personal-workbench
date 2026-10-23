@@ -329,8 +329,8 @@
 .wb-day-fest { font-size: 10px; color: var(--wb-warn); font-weight: 600; margin-top: 3px; }
 .wb-day-fest.wb-jq { color: #7fd6b0; }
 .wb-day-fest.wb-fest { color: var(--wb-warn); }
-.wb-day-badges { position: absolute; right: 6px; top: 6px; display: flex; gap: 3px; }
-.wb-badge { width: 6px; height: 6px; border-radius: 50%; }
+.wb-day-badges { position: absolute; right: 6px; top: 5px; display: flex; gap: 4px; flex-wrap: nowrap; }
+.wb-badge { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255,255,255,.85); }
 .wb-bg-task { background: var(--wb-accent-2); }
 .wb-bg-bday { background: var(--wb-bday); }
 .wb-bg-holiday { background: var(--wb-holiday); }
