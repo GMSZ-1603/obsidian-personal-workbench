@@ -216,15 +216,15 @@
 .wb-wx-meta { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--wb-muted); }
 .wb-wx-cond { font-size: 13px; color: var(--wb-text); font-weight: 500; }
 .wb-wx-idx { margin-top: 2px; }
-.wb-wx-idx-hd { cursor: pointer; font-size: 10.5px; color: #b9bfd2; user-select: none; display: flex; align-items: center; gap: 5px; }
-.wb-wx-idx-hd:hover { color: #e6e9f5; }
-.wb-wx-idx-arrow { font-size: 9px; color: #8b93ab; width: 8px; flex: none; transition: transform .15s; }
+.wb-wx-idx-hd { cursor: pointer; font-size: 10.5px; color: #5a6478; user-select: none; display: flex; align-items: center; gap: 5px; }
+.wb-wx-idx-hd:hover { color: #2e3548; }
+.wb-wx-idx-arrow { font-size: 9px; color: #667084; width: 8px; flex: none; transition: transform .15s; }
 .wb-wx-idx-detail { display: none; margin-top: 4px; padding-left: 13px; border-left: 1px dashed var(--wb-line); }
-.wb-wx-idx-item { font-size: 10.5px; color: #b9bfd2; line-height: 1.5; margin-bottom: 3px; }
-.wb-wx-src { margin-left: auto; font-size: 9px; color: #7d85a0; letter-spacing: .3px; }
+.wb-wx-idx-item { font-size: 10.5px; color: #5a6478; line-height: 1.5; margin-bottom: 3px; }
+.wb-wx-src { margin-left: auto; font-size: 9px; color: #6b7488; letter-spacing: .3px; }
 .wb-card-hd { display: flex; align-items: center; }
 .wb-wx-extra { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--wb-line); }
-.wb-wx-e { font-size: 10.5px; color: #b9bfd2; line-height: 1.5; }
+.wb-wx-e { font-size: 10.5px; color: #4e586c; line-height: 1.5; }
 .wb-wx-warn { margin-top: 8px; font-size: 11px; color: var(--wb-warn); background: color-mix(in srgb, var(--wb-warn) 14%, transparent); border-radius: 6px; padding: 3px 8px; }
 .wb-wx-empty { font-size: 12px; color: var(--wb-muted); padding: 8px 0; }
 .wb-wx-forecast { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 12px; }
@@ -242,7 +242,7 @@
 .wb-lunar-ganzhi { font-size: 11px; color: var(--wb-accent-2); letter-spacing: .4px; }
 .wb-lunar-date { font-size: 20px; font-weight: 700; }
 .wb-lunar-fest { font-size: 11px; color: var(--wb-warn); font-weight: 600; background: color-mix(in srgb, var(--wb-warn) 16%, transparent); border-radius: 6px; padding: 2px 8px; margin-left: 8px; vertical-align: 3px; }
-.wb-lunar-quote { font-size: 14px; color: #c7cad6; line-height: 1.7; border-left: 2px solid var(--wb-accent); padding-left: 10px; margin-top: 8px; text-align: left; align-self: flex-start; }
+.wb-lunar-quote { font-size: 14px; color: #3f485c; line-height: 1.7; border-left: 2px solid var(--wb-accent); padding-left: 10px; margin-top: 8px; text-align: left; align-self: flex-start; }
 .wb-lunar-verse { line-height: 1.7; white-space: nowrap; }
 
 /* ---------- 年度进度 ---------- */
@@ -271,7 +271,7 @@
 .wb-task-txt--due { color: var(--wb-danger); }
 .wb-task-date { color: var(--wb-muted); font-size: 10px; flex-shrink: 0; margin-left: auto; text-align: right; white-space: nowrap; }
 .wb-task-flag { margin-right: 4px; }
-.wb-task-src { font-size: 9px; color: #b6bfcf; width: 200px; flex-shrink: 0; margin-left: 6px; text-align: right; word-break: break-all; line-height: 1.5; }
+.wb-task-src { font-size: 9px; color: #6b7488; width: 200px; flex-shrink: 0; margin-left: 6px; text-align: right; word-break: break-all; line-height: 1.5; }
 .wb-empty { font-size: 12px; color: var(--wb-muted); text-align: center; padding: 8px 0; }
 .wb-divider { height: 1px; background: var(--wb-line); margin: 12px 0 8px; }
 .wb-subhead { font-size: 11px; color: var(--wb-muted); margin-bottom: 6px; }
