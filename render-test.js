@@ -326,6 +326,11 @@ const app = {
   const festCells10 = el.querySelectorAll(".wb-day-fest").map(c => c.textContent);
   check("10月世界住房日(国际住房日)", festCells10.includes("世界住房日"), festCells10.join(","));
   check("10/5 国庆假期与节日并存", festCells10.filter(t => t === "国庆").length >= 5 && festCells10.includes("世界住房日"), festCells10.join(","));
+  const festEls10 = el.querySelectorAll(".wb-day-fest");
+  const _holCls = [...festEls10].some(e => e.textContent === "国庆" && (e.className || "").includes("wb-hol"));
+  const _festCls = [...festEls10].some(e => e.textContent === "世界住房日" && (e.className || "").includes("wb-fest"));
+  check("假期红色类wb-hol", _holCls, [...festEls10].map(e => e.className + ":" + e.textContent).join(","));
+  check("节日琥珀类wb-fest(世界住房日)", _festCls, [...festEls10].map(e => e.className + ":" + e.textContent).join(","));
   // 切回 9 月继续后续断言
   state.year = 2026; state.month = 9; state.selected = "2026-09-03";
   await plugin.renderDashboard(el, null, state);

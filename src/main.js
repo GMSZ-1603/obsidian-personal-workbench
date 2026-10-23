@@ -2021,7 +2021,7 @@ class WorkbenchPlugin extends Plugin {
 
       const num = cell.createDiv({ cls: "wb-day-num", text: String(c.d) });
       const festParts = [];
-      if (hol) festParts.push({ t: hol, k: "wb-fest" });
+      if (hol) festParts.push({ t: hol, k: "wb-hol" });
       if (lfest.length) festParts.push({ t: lfest[0], k: "wb-fest" });
       if (sfest.length) festParts.push({ t: sfest[0], k: "wb-fest" });
       if (jq) festParts.push({ t: jq, k: "wb-jq" });

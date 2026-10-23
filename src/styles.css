@@ -323,12 +323,13 @@
 .wb-day.wb-restday .wb-day-num { color: #dc2626; font-weight: 700; }
 .wb-day.wb-workday { background: var(--wb-card-2); }
 .wb-day.wb-holiday { background: color-mix(in srgb, var(--wb-holiday) 16%, var(--wb-card-2)); border-color: color-mix(in srgb, var(--wb-holiday) 45%, transparent); }
-.wb-day.wb-holiday .wb-day-fest { color: var(--wb-holiday); }
+.wb-day.wb-holiday .wb-day-fest.wb-hol { color: var(--wb-holiday); }
 .wb-day.wb-today .wb-day-num { color: var(--wb-accent-2); }
 .wb-day-lunar { font-size: 9px; color: var(--wb-muted); margin-top: 2px; }
 .wb-day-fest { font-size: 10px; color: var(--wb-warn); font-weight: 600; margin-top: 3px; }
 .wb-day-fest.wb-jq { color: #7fd6b0; }
 .wb-day-fest.wb-fest { color: var(--wb-warn); }
+.wb-day-fest.wb-hol { color: var(--wb-holiday); }
 .wb-day-badges { position: absolute; right: 6px; top: 5px; display: flex; gap: 4px; flex-wrap: nowrap; }
 .wb-badge { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255,255,255,.85); }
 .wb-bg-task { background: var(--wb-accent-2); }
