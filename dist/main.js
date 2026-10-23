@@ -8528,6 +8528,10 @@ const HOLIDAYS = {
   // 每年 11 月国务院公布次年安排后，在此新增一年数据："2027": { ... }
 };
 
+/* 自定义公历节日（补充 lunar 库未收录的国际日/纪念日，键 = MM-DD，跨年复用）
+ * 注：10-05 的"世界住房日"（即国际住房日）lunar 库已内置，无需在此重复添加 */
+const EXTRA_SOLAR_FEST = {};
+
 /* ---------------- 常量 ---------------- */
 const LUNAR_MONTHS = { 正: 1, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12, 冬: 11, 腊: 12 };
 const CN_NUM = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
@@ -10497,7 +10501,10 @@ class WorkbenchPlugin extends Plugin {
       const lunar = solar.getLunar();
       const jq = lunar.getJieQi();
       const lfest = lunar.getFestivals() || [];
-      const sfest = solar.getFestivals() || [];
+      const sfest = [...(solar.getFestivals() || [])];
+      const _md = `${String(c.m).padStart(2, "0")}-${String(c.d).padStart(2, "0")}`;
+      const _ext = EXTRA_SOLAR_FEST[_md];
+      if (_ext) sfest.push(_ext);
       const oFest = lunar.getOtherFestivals() || [];
       const hol = (HOLIDAYS[String(c.y)] || {})[key];
       if (hol !== undefined && hol !== null) cell.addClass("wb-holiday");
@@ -10510,7 +10517,9 @@ class WorkbenchPlugin extends Plugin {
 
       const num = cell.createDiv({ cls: "wb-day-num", text: String(c.d) });
       const festParts = [];
-      if (hol || lfest.length || sfest.length) festParts.push({ t: hol || lfest[0] || sfest[0], k: "wb-fest" });
+      if (hol) festParts.push({ t: hol, k: "wb-fest" });
+      if (lfest.length) festParts.push({ t: lfest[0], k: "wb-fest" });
+      if (sfest.length) festParts.push({ t: sfest[0], k: "wb-fest" });
       if (jq) festParts.push({ t: jq, k: "wb-jq" });
       if (festParts.length) {
         festParts.forEach(p => cell.createDiv({ cls: "wb-day-fest " + p.k, text: p.t }));
@@ -10576,7 +10585,8 @@ class WorkbenchPlugin extends Plugin {
     left.createDiv({ cls: "wb-dd-ganzhi", text: `${lunar.getMonthInGanZhi()}月 ${lunar.getDayInGanZhi()}日 · ${lunar.getShengxiao()}` });
     const jq = lunar.getJieQi();
     if (jq) left.createDiv({ cls: "wb-dd-jieqi", text: `⚡ ${jq}` });
-    const festAll = [...(lunar.getFestivals() || []), ...(solar.getFestivals() || []), ...(lunar.getOtherFestivals() || [])];
+    const _md2 = `${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const festAll = [...(lunar.getFestivals() || []), ...(solar.getFestivals() || []), ...(lunar.getOtherFestivals() || []), ...(EXTRA_SOLAR_FEST[_md2] ? [EXTRA_SOLAR_FEST[_md2]] : [])];
     if (festAll.length) left.createDiv({ cls: "wb-dd-fest", text: "🎉 " + festAll.slice(0, 3).join(" · ") });
     const bd = birthdayByKey[key];
     if (bd && bd.length) left.createDiv({ cls: "wb-dd-bd", text: "🎂 " + bd.map(e => (e.nickname || e.name) + (e.age != null ? " " + e.age + "岁" : "") + "（" + e.label + "）").join("，") });

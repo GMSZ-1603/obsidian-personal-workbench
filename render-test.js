@@ -320,6 +320,15 @@ const app = {
   check("白露", festCells.includes("白露"), festCells.join(","));
   check("秋分", festCells.includes("秋分"), festCells.join(","));
   check("中秋节", festCells.some(t => t.includes("中秋")), festCells.join(","));
+  // 切到 2026-10 验证假期与自定义公历节日并存（10/5 国庆+国际住房日）
+  state.year = 2026; state.month = 10; state.selected = "2026-10-05";
+  await plugin.renderDashboard(el, null, state);
+  const festCells10 = el.querySelectorAll(".wb-day-fest").map(c => c.textContent);
+  check("10月世界住房日(国际住房日)", festCells10.includes("世界住房日"), festCells10.join(","));
+  check("10/5 国庆假期与节日并存", festCells10.filter(t => t === "国庆").length >= 5 && festCells10.includes("世界住房日"), festCells10.join(","));
+  // 切回 9 月继续后续断言
+  state.year = 2026; state.month = 9; state.selected = "2026-09-03";
+  await plugin.renderDashboard(el, null, state);
   const actCells = el.querySelectorAll(".wb-day-act").map(c => c.textContent);
   check("日历活动标记(回家)", actCells.some(t => t.includes("回家")), actCells.join(","));
   check("日历活动徽章", el.querySelectorAll(".wb-bg-act").length >= 2, "got " + el.querySelectorAll(".wb-bg-act").length);
