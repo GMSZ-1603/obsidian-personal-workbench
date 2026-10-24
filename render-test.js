@@ -591,6 +591,28 @@ const app = {
   check("恢复扩展缓存", plugin2.extraCache.data && plugin2.extraCache.data.sunrise === "06:12", JSON.stringify(plugin2.extraCache.data));
   plugin.saveSettings = _origSave;
 
+  console.log("== 统计口径（仅正文修改计数）==");
+  // 取真实库中 mtime 在本周的 md 笔记（排除 excludeFolders / neverEdited ctime≈mtime / 附件）
+  const _now2 = Date.now();
+  const _ws = (() => { const d = new Date(_now2); d.setHours(0, 0, 0, 0); return d.getTime() - 6 * 86400000; })();
+  const _exDir2 = (p) => (plugin.settings.excludeFolders || []).some(z => z && (p === z || p.toLowerCase().startsWith(z.toLowerCase() + "/")));
+  const _pick2 = files.find(f => f.extension === "md" && f.stat.mtime >= _ws && f.stat.mtime <= _now2 && Math.abs(f.stat.mtime - f.stat.ctime) > 3000 && !_exDir2(f.path));
+  if (_pick2) {
+    const _st0 = plugin.computeStats();
+    let _dMtime2 = null;
+    for (const [k2, arr2] of (_st0.dayFiles || new Map())) if ((arr2 || []).includes(_pick2.path)) { _dMtime2 = k2; break; }
+    // 注入"上周"正文日志：模拟该笔记正文编辑在上周、本周仅 mtime 变化（如只改元属性/updated 自动更新）
+    const _lw = new Date(_ws - 86400000).toISOString().slice(0, 10);
+    plugin.settings.editLog = { [_lw]: [_pick2.path] };
+    const _st1 = plugin.computeStats();
+    const _inLogDate2 = ((_st1.dayFiles && _st1.dayFiles.get(_lw)) || []).includes(_pick2.path);
+    const _inMtimeDate2 = _dMtime2 ? ((_st1.dayFiles && _st1.dayFiles.get(_dMtime2)) || []).includes(_pick2.path) : false;
+    check("元属性mtime不参与计数（有正文日志后mtime日期剔除）", _inLogDate2 && (!_inMtimeDate2), "mtime日期=" + _dMtime2 + " 注入日志=" + _lw + " 日志命中=" + _inLogDate2 + " mtime残留=" + _inMtimeDate2);
+    delete plugin.settings.editLog;
+  } else {
+    check("元属性mtime不参与计数（库中本周md存在）", false, "库中无 mtime 在本周的 md 笔记");
+  }
+
   console.log("\n通过 " + pass + " / " + (pass + fail));
   process.exit(fail ? 1 : 0);
 })();

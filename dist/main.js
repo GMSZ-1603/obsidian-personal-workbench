@@ -9753,6 +9753,12 @@ class WorkbenchPlugin extends Plugin {
     const _elog = this.settings.editLog || {};
     const _mlog = this.settings.movedLog || {};
     const _ilog = this.settings.importLog || {};
+    // 有正文编辑日志（数组明细）的笔记：期间/热力图/活跃天数统计完全以日志为准，
+    // 其 mtime 不再参与任何计数（防止"仅改元属性 / frontmatter updated 自动更新"改变 mtime 造成误计）
+    const _hasLog = new Set();
+    for (const [k, v] of Object.entries(_elog)) {
+      if (Array.isArray(v)) for (const p of v) if (typeof p === "string" && p) _hasLog.add(p);
+    }
     // 从未编辑（导入/空笔记）：创建时间与最后编辑时间一致（<=3s）的文件不计入编辑统计（Obsidian stat.ctime=创建时间）
     const neverEdited = new Set(files.filter(f => Math.abs((f.stat.mtime || 0) - (f.stat.ctime || 0)) <= 3000).map(f => f.path));
     const propKeys = new Set();
@@ -9775,7 +9781,7 @@ class WorkbenchPlugin extends Plugin {
       const mt = file.stat.mtime;
       {
         const _hymd = ymdOf(mt);
-        if (!(_mlog[_hymd] || []).includes(file.path) && !(_ilog[_hymd] || []).includes(file.path) && !neverEdited.has(file.path)) {
+        if (!(_mlog[_hymd] || []).includes(file.path) && !(_ilog[_hymd] || []).includes(file.path) && !neverEdited.has(file.path) && !_hasLog.has(file.path)) {
           dayHist.set(_hymd, (dayHist.get(_hymd) || 0) + 1);
           if (!dayFiles.has(_hymd)) dayFiles.set(_hymd, []);
           dayFiles.get(_hymd).push(file.path);
@@ -9813,7 +9819,7 @@ class WorkbenchPlugin extends Plugin {
       const _wkF = new Set(), _mF = new Set(), _qF = new Set(), _yF = new Set();
       for (const file of files) {
         const _mt = file.stat.mtime;
-        if ((_mlog[ymdOf(_mt)] || []).includes(file.path) || (_ilog[ymdOf(_mt)] || []).includes(file.path) || neverEdited.has(file.path)) continue;
+        if ((_mlog[ymdOf(_mt)] || []).includes(file.path) || (_ilog[ymdOf(_mt)] || []).includes(file.path) || neverEdited.has(file.path) || _hasLog.has(file.path)) continue;
         if (_mt >= yearStart) _yF.add(file.path);
         if (_mt >= quarterStart) _qF.add(file.path);
         if (_mt >= monthStart) _mF.add(file.path);
@@ -9833,7 +9839,7 @@ class WorkbenchPlugin extends Plugin {
     }
     return {
       totalNotes: total,
-      noteList: files.filter(f => !(_mlog[ymdOf(f.stat.mtime)] || []).includes(f.path) && !(_ilog[ymdOf(f.stat.mtime)] || []).includes(f.path) && !neverEdited.has(f.path)).map(f => ({ p: f.path, m: f.stat.mtime })),
+      noteList: files.filter(f => !(_mlog[ymdOf(f.stat.mtime)] || []).includes(f.path) && !(_ilog[ymdOf(f.stat.mtime)] || []).includes(f.path) && !neverEdited.has(f.path) && !_hasLog.has(f.path)).map(f => ({ p: f.path, m: f.stat.mtime })),
       dayFiles, // ymd -> [路径]（热力图记录笔记明细）
       dayHist,
       newThisMonth: newMonth,
