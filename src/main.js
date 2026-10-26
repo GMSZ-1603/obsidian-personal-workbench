@@ -1485,31 +1485,34 @@ class WorkbenchPlugin extends Plugin {
     }
     const doneCount = tasks.filter(t => t.done).length;
 
-    // 生日：每人只取最近一次（含明年），换算为公历日期；显示用称呼+岁数
+    // 生日：日历一直保留（今年无论是否已过 + 明年跨年），换算为公历日期；显示用称呼+岁数
     const birthdayEvents = []; // { name, nickname, type, solar:{y,m,d}, label(按笔记原文), age? }
     const ty = now.getFullYear();
     const today = todayStr();
     for (const b of birthdays) {
       const label = b.dateRaw || lunarCnDate(b.month, b.day); // 完全按笔记中的写法
       if (b.type === "lunar") {
-        let best = null;
-        for (const ly of [ty - 1, ty, ty + 1]) {
-          const s = lunarBirthdaySolar(ly, b.month, b.day);
-          if (s && fmtDate(s.y, s.m, s.d) >= today && (!best || fmtDate(s.y, s.m, s.d) < fmtDate(best.s.y, best.s.m, best.s.d))) best = { s, ly };
-        }
-        if (best) birthdayEvents.push({
+        // 今年（无论是否已过，日历保留显示）+ 明年（跨年日历可见）
+        const s0 = lunarBirthdaySolar(ty, b.month, b.day);
+        if (s0) birthdayEvents.push({
           name: b.name, nickname: b.nickname || b.name, month: b.month, day: b.day,
-          solar: best.s, label, type: "lunar",
-          age: b.lunarYear != null ? lunarBirthdayAge(b.lunarYear, best.ly) : null
+          solar: s0, label, type: "lunar",
+          age: b.lunarYear != null ? lunarBirthdayAge(b.lunarYear, ty) : null
+        });
+        const s1 = lunarBirthdaySolar(ty + 1, b.month, b.day);
+        if (s1) birthdayEvents.push({
+          name: b.name, nickname: b.nickname || b.name, month: b.month, day: b.day,
+          solar: s1, label, type: "lunar",
+          age: b.lunarYear != null ? lunarBirthdayAge(b.lunarYear, ty + 1) : null
         });
       } else {
-        for (const y of [ty - 1, ty]) {
-          const s = { y, m: b.month, d: b.day };
-          if (fmtDate(s.y, s.m, s.d) >= today) { birthdayEvents.push({ name: b.name, nickname: b.nickname || b.name, month: b.month, day: b.day, solar: s, label, type: "solar", age: null }); break; }
-        }
+        // 公历生日：今年 + 明年
+        birthdayEvents.push({ name: b.name, nickname: b.nickname || b.name, month: b.month, day: b.day, solar: { y: ty, m: b.month, d: b.day }, label, type: "solar", age: null });
+        birthdayEvents.push({ name: b.name, nickname: b.nickname || b.name, month: b.month, day: b.day, solar: { y: ty + 1, m: b.month, d: b.day }, label, type: "solar", age: null });
       }
     }
     const upcoming = birthdayEvents
+      .filter(e => fmtDate(e.solar.y, e.solar.m, e.solar.d) >= today)
       .sort((a, b) => fmtDate(a.solar.y, a.solar.m, a.solar.d).localeCompare(fmtDate(b.solar.y, b.solar.m, b.solar.d)))
       .slice(0, 6);
 
