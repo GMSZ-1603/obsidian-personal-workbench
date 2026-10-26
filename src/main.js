@@ -358,6 +358,29 @@ function bodyHash(s) {
   return h >>> 0;
 }
 
+/* 解析 frontmatter updated 值 → 时间戳（毫秒）。支持 YAML 日期字符串 / Date 对象 / 数字时间戳。
+   用途：Frontmatter Date Manager 仅在修改正文时更新 updated 字段，故其可作为比 mtime
+   （会被元属性修改/同步污染）更可靠的"最后正文编辑时间"参考。 */
+function parseFmTime(v) {
+  if (v == null) return 0;
+  let t = 0;
+  if (typeof v === "number") t = v;
+  else if (typeof v === "object" && v.getTime && typeof v.getTime === "function") t = v.getTime();
+  else if (typeof v === "string") {
+    const s = String(v).trim().replace(/\s+/g, " ");
+    const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+    if (m) {
+      // 带 Z / ±hh:mm 时区后缀：用 Date.parse 正确处理（如 Frontmatter Date Manager 写的 ISO UTC "2025-07-10T02:33:44.000Z"）
+      if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) {
+        const ts = Date.parse(s);
+        if (Number.isFinite(ts)) t = ts;
+      }
+      if (!t) t = new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)).getTime();
+    }
+  }
+  return Number.isFinite(t) && t > 0 ? t : 0;
+}
+
 /* 将一句引用按标点/中点分成两行，使两行字数相近、不挤在一行 */
 function splitQuote(s) {
   if (!s) return ["", ""];
@@ -1280,9 +1303,22 @@ class WorkbenchPlugin extends Plugin {
       if (out > 0) hasOut.add(src);
     }
     let totalTasks = 0, doneTasks = 0;
+    const effMtimes = new Map(); // path -> 有效最后编辑时间（frontmatter.updated 优先，回退 mtime）
     for (const file of files) {
       total++;
-      const mt = file.stat.mtime;
+      const cache = this.app.metadataCache.getFileCache(file);
+      // 有效最后编辑时间：frontmatter updated（Frontmatter Date Manager 仅在正文修改时更新）优先，
+      // 回退 mtime；updated 解析失败或未来>1天（异常手写值）回退 mtime
+      let mt = file.stat.mtime;
+      if (cache && cache.frontmatter) {
+        // Frontmatter Date Manager 实际写的是 modified（仅在修改正文时更新），兼容 updated
+        const _upd = cache.frontmatter.modified != null ? cache.frontmatter.modified : cache.frontmatter.updated;
+        if (_upd != null) {
+          const _ut = parseFmTime(_upd);
+          if (_ut > 0 && _ut <= Date.now() + 86400000) mt = _ut;
+        }
+      }
+      effMtimes.set(file.path, mt);
       {
         const _hymd = ymdOf(mt);
         if (!(_mlog[_hymd] || []).includes(file.path) && !(_ilog[_hymd] || []).includes(file.path) && !neverEdited.has(file.path) && !_hasLog.has(file.path)) {
@@ -1293,7 +1329,6 @@ class WorkbenchPlugin extends Plugin {
         }
       }
       if (!hasOut.has(file.path) && !isTarget.has(file.path)) orphan++;
-      const cache = this.app.metadataCache.getFileCache(file);
       if (cache && cache.frontmatter) for (const k of Object.keys(cache.frontmatter)) propKeys.add(String(k).trim());
       if (!cache) continue;
       const addTags = list => {
@@ -1322,7 +1357,7 @@ class WorkbenchPlugin extends Plugin {
     {
       const _wkF = new Set(), _mF = new Set(), _qF = new Set(), _yF = new Set();
       for (const file of files) {
-        const _mt = file.stat.mtime;
+        const _mt = effMtimes.get(file.path) || file.stat.mtime;
         if ((_mlog[ymdOf(_mt)] || []).includes(file.path) || (_ilog[ymdOf(_mt)] || []).includes(file.path) || neverEdited.has(file.path) || _hasLog.has(file.path)) continue;
         if (_mt >= yearStart) _yF.add(file.path);
         if (_mt >= quarterStart) _qF.add(file.path);
@@ -1343,7 +1378,15 @@ class WorkbenchPlugin extends Plugin {
     }
     return {
       totalNotes: total,
-      noteList: files.filter(f => !(_mlog[ymdOf(f.stat.mtime)] || []).includes(f.path) && !(_ilog[ymdOf(f.stat.mtime)] || []).includes(f.path) && !neverEdited.has(f.path) && !_hasLog.has(f.path)).map(f => ({ p: f.path, m: f.stat.mtime })),
+      noteList: (() => {
+        const _out = [];
+        for (const f of files) {
+          const _fm = effMtimes.get(f.path) || f.stat.mtime;
+          if ((_mlog[ymdOf(_fm)] || []).includes(f.path) || (_ilog[ymdOf(_fm)] || []).includes(f.path) || neverEdited.has(f.path) || _hasLog.has(f.path)) continue;
+          _out.push({ p: f.path, m: _fm });
+        }
+        return _out;
+      })(),
       dayFiles, // ymd -> [路径]（热力图记录笔记明细）
       dayHist,
       newThisMonth: newMonth,
@@ -2239,7 +2282,7 @@ class WorkbenchSettingTab extends PluginSettingTab {
 
 /* 测试钩子（仅用于构建期自测） */
 if (typeof globalThis !== "undefined") {
-  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, bodyText, bodyHash, parseTaskTime, isoWeek, weekendRest, yearWeekends, heatmapSection, heatmapPendingDates, HEATMAP_LOG_PATH, expandActivityDates, buildActivityMap, ACTIVITY_DEFAULT_COLOR, expandLifeDates, parseDataFile, restFromTable, parseLifeRow, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, fetchOpenMeteoExtra, QW_ICONS };
+  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, bodyText, bodyHash, parseFmTime, parseTaskTime, isoWeek, weekendRest, yearWeekends, heatmapSection, heatmapPendingDates, HEATMAP_LOG_PATH, expandActivityDates, buildActivityMap, ACTIVITY_DEFAULT_COLOR, expandLifeDates, parseDataFile, restFromTable, parseLifeRow, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, fetchOpenMeteoExtra, QW_ICONS };
 }
 
 module.exports = WorkbenchPlugin;

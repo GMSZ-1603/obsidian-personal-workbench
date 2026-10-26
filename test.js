@@ -60,6 +60,17 @@ eq("bodyText 正文含---不误切", T.bodyText("---\ntags: a\n---\n正文\n---\
 eq("仅frontmatter变化hash不变", T.bodyHash(T.bodyText("---\ntags: a\n---\n正文")) === T.bodyHash(T.bodyText("---\ntags: b\n---\n正文")), true);
 eq("正文变化hash变", T.bodyHash(T.bodyText("---\ntags: a\n---\n正文A")) !== T.bodyHash(T.bodyText("---\ntags: a\n---\n正文B")), true);
 
+console.log("== frontmatter updated 解析 ==");
+eq("parseFmTime 纯日期", T.parseFmTime("2026-10-24"), new Date(2026, 9, 24).getTime());
+eq("parseFmTime 日期+时间", T.parseFmTime("2026-10-24 08:30"), new Date(2026, 9, 24, 8, 30).getTime());
+eq("parseFmTime 秒级", T.parseFmTime("2026-10-24T08:30:15"), new Date(2026, 9, 24, 8, 30, 15).getTime());
+eq("parseFmTime Date对象", T.parseFmTime(new Date(2026, 9, 24, 8, 30)), new Date(2026, 9, 24, 8, 30).getTime());
+eq("parseFmTime 数字时间戳", T.parseFmTime(new Date(2026, 9, 24).getTime()), new Date(2026, 9, 24).getTime());
+eq("parseFmTime 非法返回0", T.parseFmTime("abc") === 0 && T.parseFmTime(null) === 0 && T.parseFmTime("") === 0, true);
+eq("parseFmTime 未来异常值", T.parseFmTime("2999-01-01"), new Date(2999, 0, 1).getTime()); // 上限防护在 computeStats，解析函数原样返回
+eq("parseFmTime ISO UTC (Z)", T.parseFmTime("2025-07-10T02:33:44.000Z"), Date.parse("2025-07-10T02:33:44.000Z"));
+eq("parseFmTime 时区偏移", T.parseFmTime("2026-10-24T08:30:00+08:00"), Date.parse("2026-10-24T08:30:00+08:00"));
+
 console.log("== 农历生日 -> 今年公历 ==");
 eq("卢小南 八月十二 -> 2026-09-22", T.lunarBirthdaySolar(2026, 8, 12), { y: 2026, m: 9, d: 22 });
 eq("庄可凤 九月十六 -> 2026-10-25", T.lunarBirthdaySolar(2026, 9, 16), { y: 2026, m: 10, d: 25 });
