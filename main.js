@@ -8528,6 +8528,10 @@ const HOLIDAYS = {
   // 每年 11 月国务院公布次年安排后，在此新增一年数据："2027": { ... }
 };
 
+/* 自定义公历节日（补充 lunar 库未收录的国际日/纪念日，键 = MM-DD，跨年复用）
+ * 注：10-05 的"世界住房日"（即国际住房日）lunar 库已内置，无需在此重复添加 */
+const EXTRA_SOLAR_FEST = {};
+
 /* ---------------- 常量 ---------------- */
 const LUNAR_MONTHS = { 正: 1, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12, 冬: 11, 腊: 12 };
 const CN_NUM = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
@@ -8561,7 +8565,7 @@ const DEFAULT_SETTINGS = {
   city: "常州",
   latitude: 31.77,
   longitude: 119.97,
-  birthdayFile: "生活/生日日期.md",
+  dataFile: "生活/个人工作台数据.md",
   excludeFolders: ["图片", "Templates", "OneNote", "smart-note-agent", ".smartnotes", "微信公众号文章", "统计"],
   refreshMinutes: 10,
   qweatherKey: "",
@@ -8850,6 +8854,29 @@ function bodyHash(s) {
   return h >>> 0;
 }
 
+/* 解析 frontmatter updated 值 → 时间戳（毫秒）。支持 YAML 日期字符串 / Date 对象 / 数字时间戳。
+   用途：Frontmatter Date Manager 仅在修改正文时更新 updated 字段，故其可作为比 mtime
+   （会被元属性修改/同步污染）更可靠的"最后正文编辑时间"参考。 */
+function parseFmTime(v) {
+  if (v == null) return 0;
+  let t = 0;
+  if (typeof v === "number") t = v;
+  else if (typeof v === "object" && v.getTime && typeof v.getTime === "function") t = v.getTime();
+  else if (typeof v === "string") {
+    const s = String(v).trim().replace(/\s+/g, " ");
+    const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+    if (m) {
+      // 带 Z / ±hh:mm 时区后缀：用 Date.parse 正确处理（如 Frontmatter Date Manager 写的 ISO UTC "2025-07-10T02:33:44.000Z"）
+      if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) {
+        const ts = Date.parse(s);
+        if (Number.isFinite(ts)) t = ts;
+      }
+      if (!t) t = new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)).getTime();
+    }
+  }
+  return Number.isFinite(t) && t > 0 ? t : 0;
+}
+
 /* 将一句引用按标点/中点分成两行，使两行字数相近、不挤在一行 */
 function splitQuote(s) {
   if (!s) return ["", ""];
@@ -8897,7 +8924,8 @@ async function scanTasks(app, settings) {
     let content;
     try { content = await app.vault.cachedRead(file); } catch (e) { continue; }
     const lines = content.split("\n");
-    for (const line of lines) {
+    for (let li = 0; li < lines.length; li++) {
+      const line = lines[li];
       const m = line.match(/^\s*[-*+]\s+\[( |x|X)\]\s+([^\r\n]*)/);
       if (!m) continue;
       const done = m[1] !== " ";
@@ -8914,10 +8942,136 @@ async function scanTasks(app, settings) {
         .replace(/#task\b/g, "")
         .replace(/\s{2,}/g, " ")
         .trim();
-      tasks.push({ file: path, text: clean, raw, done, scheduled, due, date });
+      tasks.push({ file: path, text: clean, raw, done, scheduled, due, date, line: li });
     }
   }
   return tasks;
+}
+
+
+/* ---------------- 个人工作台数据笔记（统一数据源：生日/单双休/生活安排） ---------------- */
+const DATA_FILE_DEFAULT = "生活/个人工作台数据.md";
+const LIFE_DEFAULT_COLOR = "#c084fc";
+
+/* 表格行 -> 单元格数组 */
+function tableCells(line) {
+  const a = String(line).split("|").map(x => x.trim());
+  if (a.length && a[0] === "") a.shift();
+  if (a.length && a[a.length - 1] === "") a.pop();
+  return a.filter((x, i) => !(i === 0 && x === "") && !(i === a.length - 1 && x === "")).length ? a : a.filter(x => x !== "");
+}
+
+/* 生活安排日期列：支持 "20261002-07"、"20261007、14、21、28"、"20261002" 及逗号/顿号多段 */
+function pushDateRange(out, y1, mo1, d1, y2, mo2, d2) {
+  const st = new Date(y1, mo1 - 1, d1), en = new Date(y2, mo2 - 1, d2);
+  if (isNaN(st.getTime()) || isNaN(en.getTime()) || en < st) return;
+  for (let d = new Date(st); d <= en; d.setDate(d.getDate() + 1)) {
+    out.push(fmtDate(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+  }
+}
+function expandLifeDates(str, defYear) {
+  const out = [];
+  let lastPrefix = "";
+  const segs = String(str || "").split(/[、,，;；]/).map(x => x.trim()).filter(Boolean);
+  for (const seg of segs) {
+    let m = seg.match(/^(\d{4})(\d{2})(\d{2})(?:\s*-\s*(\d{2,8}))?$/);
+    if (m) {
+      const y1 = +m[1], mo1 = +m[2], d1 = +m[3];
+      let y2 = y1, mo2 = mo1, d2 = d1;
+      if (m[4]) {
+        const e = m[4];
+        if (e.length === 2) { d2 = +e; }
+        else if (e.length === 4) { mo2 = +e.slice(0, 2); d2 = +e.slice(2); }
+        else if (e.length === 8) { y2 = +e.slice(0, 4); mo2 = +e.slice(4, 6); d2 = +e.slice(6); }
+        else continue;
+      }
+      pushDateRange(out, y1, mo1, d1, y2, mo2, d2);
+      lastPrefix = String(y1) + String(mo1).padStart(2, "0");
+      continue;
+    }
+    m = seg.match(/^(\d{2,4})$/);
+    if (m && lastPrefix) {
+      const v = m[1], y = +lastPrefix.slice(0, 4), mo = +lastPrefix.slice(4, 6);
+      if (v.length === 2) pushDateRange(out, y, mo, +v, y, mo, +v);
+      else if (v.length === 4) { const mo2 = +v.slice(0, 2), d2 = +v.slice(2); pushDateRange(out, y, mo2, d2, y, mo2, d2); }
+    }
+  }
+  return out;
+}
+function parseLifeRow(cells, year, map) {
+  const dates = cells[0], name = (cells[1] || "").trim();
+  if (!dates || !name) return;
+  for (const key of expandLifeDates(dates, year)) {
+    if (!map.has(key)) map.set(key, []);
+    const arr = map.get(key);
+    if (!arr.some(x => x.name === name)) arr.push({ name, color: LIFE_DEFAULT_COLOR, text: name });
+  }
+}
+function parseRestRow(cells, year, weekRest) {
+  const wk = String(cells[0]).trim();
+  const rest = String(cells[2] || "").replace(/、/g, "，");
+  if (!/^\d+$/.test(wk) || !rest) return;
+  const hasSat = rest.includes("周六"), hasSun = rest.includes("周日");
+  if (hasSat && hasSun) weekRest[String(year)][wk] = "double";
+  else if (hasSat) weekRest[String(year)][wk] = "sat";
+  else if (hasSun) weekRest[String(year)][wk] = "sun";
+}
+
+/* 解析【个人工作台数据】笔记 -> { birthdays, weekRest, lifeMap } */
+function parseDataFile(content) {
+  const res = { birthdays: [], weekRest: {}, lifeMap: new Map() };
+  const blocks = {};
+  let cur = null;
+  for (const raw of String(content || "").split(/\r?\n/)) {
+    const hm = raw.match(/^##\s+(.+)$/);
+    if (hm) { cur = hm[1].trim(); blocks[cur] = blocks[cur] || []; continue; }
+    if (cur) blocks[cur].push(raw);
+  }
+  // 生日日期（兼容旧列表格式）
+  for (const line of blocks["生日日期"] || []) {
+    let l = line.trim().replace(/^[-*+]\s+/, "");
+    if (!l || l.startsWith("#") || l.startsWith("---")) continue;
+    const parts = l.split(/[，,]/);
+    if (parts.length < 2) continue;
+    const name = parts[0].trim();
+    let nickname = null, dateStr;
+    if (parts.length >= 3) { nickname = parts[1].trim(); dateStr = parts.slice(2).join("，").trim(); }
+    else { dateStr = parts.slice(1).join("，").trim(); }
+    const parsed = parseBirthdayDate(dateStr);
+    if (!parsed || !name) continue;
+    res.birthdays.push({ name, nickname: nickname || name, ...parsed, dateRaw: dateStr });
+  }
+  // 单双休安排（### 年度 + 表格）
+  let curYear = new Date().getFullYear();
+  for (const line of blocks["单双休安排"] || []) {
+    const ym = line.match(/^###\s*(\d{4})年?\s*$/);
+    if (ym) { curYear = +ym[1]; res.weekRest[String(curYear)] = res.weekRest[String(curYear)] || {}; continue; }
+    const c = tableCells(line);
+    if (c.length >= 3 && /^\d+$/.test(String(c[0])) && c[2]) {
+      res.weekRest[String(curYear)] = res.weekRest[String(curYear)] || {};
+      parseRestRow(c, curYear, res.weekRest);
+    }
+  }
+  // 生活安排（### 年度 + 表格）
+  curYear = new Date().getFullYear();
+  for (const line of blocks["生活安排"] || []) {
+    const ym = line.match(/^###\s*(\d{4})年?\s*$/);
+    if (ym) { curYear = +ym[1]; continue; }
+    const c = tableCells(line);
+    if (c.length >= 2 && c[0] && c[1]) parseLifeRow(c, curYear, res.lifeMap);
+  }
+  return res;
+}
+
+/* 单双休表判定：restMap[year][wk] = "double"|"sat"|"sun"，缺省双休；dow 0=周日 6=周六 */
+function restFromTable(restMap, y, m, d, dow) {
+  const yr = restMap && restMap[String(y)];
+  if (!yr) return true;
+  const wk = String(isoWeek(y, m, d));
+  const v = yr[wk];
+  if (v === "sun") return dow === 0;
+  if (v === "sat") return dow === 6;
+  return true;
 }
 
 async function scanBirthdays(app, settings) {
@@ -8945,6 +9099,55 @@ async function scanBirthdays(app, settings) {
     list.push({ name, nickname: nickname || name, ...parsed, dateRaw: dateStr });
   }
   return list;
+}
+
+/* ---------------- 活动：设置面板管理（自定义颜色） ---------------- */
+const ACTIVITY_DEFAULT_COLOR = "#c084fc"; // 紫色：与任务/生日/节日/节气/假期明显区分
+// 展开日期：支持 "2026-10-01" 单日或 "2026-10-02~2026-10-05" 范围（分隔符 ~ / 至 / 到 / -）
+function expandActivityDates(dateStr) {
+  const out = [];
+  const str = String(dateStr || "").trim();
+  if (!str) return out;
+  // 新格式：YYYYMMDD 单日 / YYYYMMDD-YYYYMMDD 范围（8 位无分隔，范围用 -）
+  let m = str.match(/^(\d{4})(\d{2})(\d{2})(?:\s*-\s*(\d{4})(\d{2})(\d{2}))?$/);
+  if (m) {
+    const y1 = Number(m[1]), mo1 = Number(m[2]), d1 = Number(m[3]);
+    const y2 = m[4] ? Number(m[4]) : y1, mo2 = Number(m[5] || m[2]), d2 = Number(m[6] || m[3]);
+    const start = new Date(y1, mo1 - 1, d1);
+    const end = new Date(y2, mo2 - 1, d2);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return out;
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      out.push(fmtDate(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+    }
+    return out;
+  }
+  // 兼容旧格式：YYYY-MM-DD 单日 / YYYY-MM-DD~YYYY-MM-DD 或 YYYY-MM-DD至YYYY-MM-DD 范围
+  m = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s*[~至到]\s*(\d{4})?[-/](\d{1,2})[-/](\d{1,2}))?$/);
+  if (!m) return out;
+  const y1 = Number(m[1]), m1 = Number(m[2]), d1 = Number(m[3]);
+  const y2 = m[4] ? Number(m[4]) : y1, m2 = Number(m[5] || m[2]), d2 = Number(m[6] || m[3]);
+  const start = new Date(y1, m1 - 1, d1);
+  const end = new Date(y2, m2 - 1, d2);
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return out;
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    out.push(fmtDate(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+  }
+  return out;
+}
+// 由设置里的活动列表构造 { key: [{ name, color, text }] }
+function buildActivityMap(activities) {
+  const map = new Map();
+  for (const a of (activities || [])) {
+    if (!a || !String(a.name || "").trim()) continue;
+    const name = String(a.name).trim();
+    const color = /^#[0-9a-fA-F]{6}$/.test(a.color || "") ? a.color : ACTIVITY_DEFAULT_COLOR;
+    for (const key of expandActivityDates(a.date)) {
+      if (!map.has(key)) map.set(key, []);
+      const arr = map.get(key);
+      if (!arr.some(x => x.name === name)) arr.push({ name, color, text: name });
+    }
+  }
+  return map;
 }
 
 async function fetchWeather(settings, _req) {
@@ -9082,6 +9285,8 @@ class WorkbenchPlugin extends Plugin {
     this.birthdayCache = { data: null, stale: true };
     this.weatherCache = { data: null, stale: true };
     this.extraCache = { data: null, stale: true };
+    this.activityCache = { data: null, stale: true };
+    this.dataCache = { data: null, stale: true };
     this._restoreWeatherCaches();
 
     // 独立视图（个人工作台页签）
@@ -9185,7 +9390,7 @@ class WorkbenchPlugin extends Plugin {
     }
   }
 
-  onunload() {}
+  onunload() { this.hideHeatTip(); }
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -9204,6 +9409,74 @@ class WorkbenchPlugin extends Plugin {
     const leaf = workspace.getLeaf(true);
     await leaf.setViewState({ type: VIEW_TYPE_WORKBENCH, active: true });
     workspace.revealLeaf(leaf);
+  }
+
+  /* 打开笔记但避免重复标签：已打开则聚焦到已有标签，未打开才新建 */
+  async openNoteOnce(file) {
+    if (!file) return;
+    const { workspace } = this.app;
+    try {
+      const hit = workspace.getLeavesOfType("markdown").find(l => l.view && l.view.file && l.view.file.path === file.path);
+      if (hit) {
+        try { workspace.revealLeaf(hit); } catch (e) { workspace.setActiveLeaf(hit); }
+        return;
+      }
+      // 经典 API：任何 Obsidian 版本都可靠（getLeaf("tab") 在旧版可能不识别）
+      const leaf = workspace.getLeaf(true);
+      await leaf.openFile(file);
+    } catch (e) {
+      console.warn("workbench openNoteOnce", e);
+      try { new Notice("无法打开笔记：" + (e && e.message ? e.message : e)); } catch (_) {}
+    }
+  }
+
+  /* 打开笔记并滚动到指定行（任务所在位置） */
+  async openNoteAtLine(file, line) {
+    if (!file) return;
+    const { workspace } = this.app;
+    const doLocate = (v) => {
+      if (!v) return;
+      try {
+        const L = Math.max(0, line || 0);
+        const mode = typeof v.getMode === "function" ? v.getMode() : null;
+        const ed = v.editor;
+        if (mode !== "preview" && ed && typeof ed.setCursor === "function") {
+          // 编辑视图：CodeMirror 编辑器定位（最可靠）
+          const pos = { line: L, ch: 0 };
+          ed.setCursor(pos);
+          if (typeof ed.scrollIntoView === "function") ed.scrollIntoView({ from: pos, to: pos }, true);
+          return;
+        }
+        // 阅读/其他视图：setEphemeralState 内部按行映射滚动
+        if (typeof v.setEphemeralState === "function") v.setEphemeralState({ line: L });
+      } catch (e) { console.warn("workbench locate", e); }
+    };
+    const waitLocate = (view) => {
+      // 等 editor 就绪（视图渲染完成），最多 25 次 × 80ms ≈ 2s
+      let tries = 0;
+      const tick = () => {
+        tries++;
+        if ((view && view.editor) || tries >= 25) { doLocate(view); return; }
+        setTimeout(tick, 80);
+      };
+      tick();
+      // 二次确认：1.5s 后再定位一次，防被后续渲染覆盖
+      setTimeout(() => doLocate(view), 1500);
+    };
+    try {
+      const hit = workspace.getLeavesOfType("markdown").find(l => l.view && l.view.file && l.view.file.path === file.path);
+      if (hit) {
+        try { workspace.revealLeaf(hit); } catch (e) { workspace.setActiveLeaf(hit); }
+        waitLocate(hit.view);
+        return;
+      }
+      const leaf = workspace.getLeaf(true);
+      await leaf.openFile(file);
+      waitLocate(leaf.view);
+    } catch (e) {
+      console.warn("workbench openNoteAtLine", e);
+      try { new Notice("无法打开笔记：" + (e && e.message ? e.message : e)); } catch (_) {}
+    }
   }
 
   /* ---- 数据获取（带缓存） ---- */
@@ -9246,11 +9519,28 @@ class WorkbenchPlugin extends Plugin {
   async getBirthdays(force) {
     const c = this.birthdayCache;
     if (c.data && c.data.length && !c.stale && !force) return c.data;
-    try { c.data = await scanBirthdays(this.app, this.settings); }
-    catch (e) { console.error("workbench scanBirthdays", e); }
+    try { c.data = (await this.getData(force)).birthdays || []; }
+    catch (e) { console.error("workbench birthdays from dataFile", e); }
     c.stale = false;
     return c.data || [];
   }
+
+  async getData(force) {
+    if (!this.dataCache) this.dataCache = { data: null, stale: true };
+    const c = this.dataCache;
+    if (c.data && !c.stale && !force) return c.data;
+    try {
+      const fp = this.settings.dataFile || DATA_FILE_DEFAULT;
+      const f = this.app.vault.getAbstractFileByPath(fp);
+      let content = "";
+      if (f && f.extension === "md") { try { content = await this.app.vault.cachedRead(f); } catch (e) {} }
+      c.data = parseDataFile(content);
+    } catch (e) { console.error("workbench parseDataFile", e); }
+    c.stale = false;
+    return c.data || { birthdays: [], weekRest: {}, lifeMap: new Map() };
+  }
+  async getWeekRest(force) { const d = await this.getData(force); return d.weekRest || {}; }
+  async getLifeActivities(force) { const d = await this.getData(force); return d.lifeMap || new Map(); }
 
   async getWeather(force) {
     const c = this.weatherCache;
@@ -9477,7 +9767,9 @@ class WorkbenchPlugin extends Plugin {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1).getTime();
     const yearStart = new Date(now.getFullYear(), 0, 1).getTime();
-    const weekStart = dayStart - 6 * 86400000;
+    // 本周=自然周（周一~周日）：今天 0 点回退到本周一 0 点（v1.5.26 起；原为"今天-6天"滚动 7 天窗口）
+    const _dowMon = (new Date(now.getFullYear(), now.getMonth(), now.getDate()).getDay() + 6) % 7; // 周一=0 … 周日=6
+    const weekStart = dayStart - _dowMon * 86400000;
     // 统计策略：先按全部 md 笔记的最后编辑时间(mtime)建立基线，再用编辑日志按天覆盖
 
     let total = 0, newMonth = 0, newWeek = 0, newQuarter = 0, newYear = 0, orphan = 0;
@@ -9486,6 +9778,12 @@ class WorkbenchPlugin extends Plugin {
     const _elog = this.settings.editLog || {};
     const _mlog = this.settings.movedLog || {};
     const _ilog = this.settings.importLog || {};
+    // 有正文编辑日志（数组明细）的笔记：期间/热力图/活跃天数统计完全以日志为准，
+    // 其 mtime 不再参与任何计数（防止"仅改元属性 / frontmatter updated 自动更新"改变 mtime 造成误计）
+    const _hasLog = new Set();
+    for (const [k, v] of Object.entries(_elog)) {
+      if (Array.isArray(v)) for (const p of v) if (typeof p === "string" && p) _hasLog.add(p);
+    }
     // 从未编辑（导入/空笔记）：创建时间与最后编辑时间一致（<=3s）的文件不计入编辑统计（Obsidian stat.ctime=创建时间）
     const neverEdited = new Set(files.filter(f => Math.abs((f.stat.mtime || 0) - (f.stat.ctime || 0)) <= 3000).map(f => f.path));
     const propKeys = new Set();
@@ -9503,12 +9801,25 @@ class WorkbenchPlugin extends Plugin {
       if (out > 0) hasOut.add(src);
     }
     let totalTasks = 0, doneTasks = 0;
+    const effMtimes = new Map(); // path -> 有效最后编辑时间（frontmatter.updated 优先，回退 mtime）
     for (const file of files) {
       total++;
-      const mt = file.stat.mtime;
+      const cache = this.app.metadataCache.getFileCache(file);
+      // 有效最后编辑时间：frontmatter updated（Frontmatter Date Manager 仅在正文修改时更新）优先，
+      // 回退 mtime；updated 解析失败或未来>1天（异常手写值）回退 mtime
+      let mt = file.stat.mtime;
+      if (cache && cache.frontmatter) {
+        // Frontmatter Date Manager 实际写的是 modified（仅在修改正文时更新），兼容 updated
+        const _upd = cache.frontmatter.modified != null ? cache.frontmatter.modified : cache.frontmatter.updated;
+        if (_upd != null) {
+          const _ut = parseFmTime(_upd);
+          if (_ut > 0 && _ut <= Date.now() + 86400000) mt = _ut;
+        }
+      }
+      effMtimes.set(file.path, mt);
       {
         const _hymd = ymdOf(mt);
-        if (!(_mlog[_hymd] || []).includes(file.path) && !(_ilog[_hymd] || []).includes(file.path) && !neverEdited.has(file.path)) {
+        if (!(_mlog[_hymd] || []).includes(file.path) && !(_ilog[_hymd] || []).includes(file.path) && !neverEdited.has(file.path) && !_hasLog.has(file.path)) {
           dayHist.set(_hymd, (dayHist.get(_hymd) || 0) + 1);
           if (!dayFiles.has(_hymd)) dayFiles.set(_hymd, []);
           dayFiles.get(_hymd).push(file.path);
@@ -9516,7 +9827,6 @@ class WorkbenchPlugin extends Plugin {
         }
       }
       if (!hasOut.has(file.path) && !isTarget.has(file.path)) orphan++;
-      const cache = this.app.metadataCache.getFileCache(file);
       if (cache && cache.frontmatter) for (const k of Object.keys(cache.frontmatter)) propKeys.add(String(k).trim());
       if (!cache) continue;
       const addTags = list => {
@@ -9545,8 +9855,8 @@ class WorkbenchPlugin extends Plugin {
     {
       const _wkF = new Set(), _mF = new Set(), _qF = new Set(), _yF = new Set();
       for (const file of files) {
-        const _mt = file.stat.mtime;
-        if ((_mlog[ymdOf(_mt)] || []).includes(file.path) || (_ilog[ymdOf(_mt)] || []).includes(file.path) || neverEdited.has(file.path)) continue;
+        const _mt = effMtimes.get(file.path) || file.stat.mtime;
+        if ((_mlog[ymdOf(_mt)] || []).includes(file.path) || (_ilog[ymdOf(_mt)] || []).includes(file.path) || neverEdited.has(file.path) || _hasLog.has(file.path)) continue;
         if (_mt >= yearStart) _yF.add(file.path);
         if (_mt >= quarterStart) _qF.add(file.path);
         if (_mt >= monthStart) _mF.add(file.path);
@@ -9566,7 +9876,15 @@ class WorkbenchPlugin extends Plugin {
     }
     return {
       totalNotes: total,
-      noteList: files.filter(f => !(_mlog[ymdOf(f.stat.mtime)] || []).includes(f.path) && !(_ilog[ymdOf(f.stat.mtime)] || []).includes(f.path) && !neverEdited.has(f.path)).map(f => ({ p: f.path, m: f.stat.mtime })),
+      noteList: (() => {
+        const _out = [];
+        for (const f of files) {
+          const _fm = effMtimes.get(f.path) || f.stat.mtime;
+          if ((_mlog[ymdOf(_fm)] || []).includes(f.path) || (_ilog[ymdOf(_fm)] || []).includes(f.path) || neverEdited.has(f.path) || _hasLog.has(f.path)) continue;
+          _out.push({ p: f.path, m: _fm });
+        }
+        return _out;
+      })(),
       dayFiles, // ymd -> [路径]（热力图记录笔记明细）
       dayHist,
       newThisMonth: newMonth,
@@ -9646,11 +9964,13 @@ class WorkbenchPlugin extends Plugin {
     el.empty();
     const root = el.createDiv({ cls: "wb-dashboard" });
 
-    const [tasks, birthdays, weather, extra] = await Promise.all([
+    const [tasks, birthdays, weather, extra, activities] = await Promise.all([
       this.getTasks(),
       this.getBirthdays(),
       this.getWeather(),
-      this.getWeatherExtra()
+      this.getWeatherExtra(),
+      this.getLifeActivities(),
+      this.getData()
     ]);
 
     // 任务按日期索引（日历徽标/左栏今日任务只统计未完成任务；当天详情右侧显示全部含已完成）
@@ -9663,31 +9983,34 @@ class WorkbenchPlugin extends Plugin {
     }
     const doneCount = tasks.filter(t => t.done).length;
 
-    // 生日：每人只取最近一次（含明年），换算为公历日期；显示用称呼+岁数
+    // 生日：日历一直保留（今年无论是否已过 + 明年跨年），换算为公历日期；显示用称呼+岁数
     const birthdayEvents = []; // { name, nickname, type, solar:{y,m,d}, label(按笔记原文), age? }
     const ty = now.getFullYear();
     const today = todayStr();
     for (const b of birthdays) {
       const label = b.dateRaw || lunarCnDate(b.month, b.day); // 完全按笔记中的写法
       if (b.type === "lunar") {
-        let best = null;
-        for (const ly of [ty - 1, ty, ty + 1]) {
-          const s = lunarBirthdaySolar(ly, b.month, b.day);
-          if (s && fmtDate(s.y, s.m, s.d) >= today && (!best || fmtDate(s.y, s.m, s.d) < fmtDate(best.s.y, best.s.m, best.s.d))) best = { s, ly };
-        }
-        if (best) birthdayEvents.push({
+        // 今年（无论是否已过，日历保留显示）+ 明年（跨年日历可见）
+        const s0 = lunarBirthdaySolar(ty, b.month, b.day);
+        if (s0) birthdayEvents.push({
           name: b.name, nickname: b.nickname || b.name, month: b.month, day: b.day,
-          solar: best.s, label, type: "lunar",
-          age: b.lunarYear != null ? lunarBirthdayAge(b.lunarYear, best.ly) : null
+          solar: s0, label, type: "lunar",
+          age: b.lunarYear != null ? lunarBirthdayAge(b.lunarYear, ty) : null
+        });
+        const s1 = lunarBirthdaySolar(ty + 1, b.month, b.day);
+        if (s1) birthdayEvents.push({
+          name: b.name, nickname: b.nickname || b.name, month: b.month, day: b.day,
+          solar: s1, label, type: "lunar",
+          age: b.lunarYear != null ? lunarBirthdayAge(b.lunarYear, ty + 1) : null
         });
       } else {
-        for (const y of [ty - 1, ty]) {
-          const s = { y, m: b.month, d: b.day };
-          if (fmtDate(s.y, s.m, s.d) >= today) { birthdayEvents.push({ name: b.name, nickname: b.nickname || b.name, month: b.month, day: b.day, solar: s, label, type: "solar", age: null }); break; }
-        }
+        // 公历生日：今年 + 明年
+        birthdayEvents.push({ name: b.name, nickname: b.nickname || b.name, month: b.month, day: b.day, solar: { y: ty, m: b.month, d: b.day }, label, type: "solar", age: null });
+        birthdayEvents.push({ name: b.name, nickname: b.nickname || b.name, month: b.month, day: b.day, solar: { y: ty + 1, m: b.month, d: b.day }, label, type: "solar", age: null });
       }
     }
     const upcoming = birthdayEvents
+      .filter(e => fmtDate(e.solar.y, e.solar.m, e.solar.d) >= today)
       .sort((a, b) => fmtDate(a.solar.y, a.solar.m, a.solar.d).localeCompare(fmtDate(b.solar.y, b.solar.m, b.solar.d)))
       .slice(0, 6);
 
@@ -9928,7 +10251,7 @@ class WorkbenchPlugin extends Plugin {
     /* ===== 日历 ===== */
     if (this.settings.calendarEnabled) {
       const calCard = grid.createDiv({ cls: "wb-card wb-calcard" });
-      this.renderCalendar(calCard, state, tasksByDate, birthdayEvents, allTasksByDate);
+      this.renderCalendar(calCard, state, tasksByDate, birthdayEvents, allTasksByDate, activities);
     }
 
     el.setAttribute("data-wb-rendered", "1");
@@ -9936,7 +10259,13 @@ class WorkbenchPlugin extends Plugin {
   }
 
   /* 热力图：3 行 × 列数（每点 12px、间隔 4px；列数由中栏宽度自适应，默认 24） */
+  /* 隐藏并清理全局热力图 tooltip（单例挂 body；重绘/视图关闭/插件卸载时必须清理，防止残留到其他笔记） */
+  hideHeatTip() {
+    if (this._heatTip) { this._heatTip.detach(); this._heatTip = null; }
+  }
+
   renderHeatmap(hm, dayHist) {
+    this.hideHeatTip(); // 重绘前先清理上一次可能残留的 tip
     const cols = this._heatCols || DEFAULT_HEAT_COLS;
     const days = cols * 3;
     const arr = new Array(days).fill(0);
@@ -9951,8 +10280,6 @@ class WorkbenchPlugin extends Plugin {
     if (typeof hm.style.setProperty === "function") hm.style.setProperty("--heat-cols", String(cols)); else hm.style["--heat-cols"] = String(cols);
     const _max = Math.max(1, ...arr);
     const _WD = "日一二三四五六";
-    let tip = null;
-    const _hideTip = () => { if (tip) { tip.detach(); tip = null; } };
     for (let a = 0; a < arr.length; a++) {
       const cell = hm.createDiv({ cls: "dashboard-banner-heatmap-cell" });
       const r = arr[a] / _max;
@@ -9963,23 +10290,23 @@ class WorkbenchPlugin extends Plugin {
       cell.setAttribute("data-ymd", ymd);
       cell.setAttribute("data-n", String(v));
       cell.addEventListener("mousemove", (ev) => {
-        if (!tip) {
-          tip = document.createElement("div");
-          tip.className = "wb-heat-tip";
-          (document.body || hm).appendChild(tip);
+        if (!this._heatTip) {
+          this._heatTip = document.createElement("div");
+          this._heatTip.className = "wb-heat-tip";
+          document.body.appendChild(this._heatTip);
         }
         const _d = new Date(ymd + "T00:00:00");
-        tip.textContent = `${_d.getFullYear()}年${_d.getMonth() + 1}月${_d.getDate()}日 周${_WD[_d.getDay()]} · 编辑 ${v} 篇`;
-        const _w = tip.offsetWidth || 150;
-        const _h = tip.offsetHeight || 30;
+        this._heatTip.textContent = `${_d.getFullYear()}年${_d.getMonth() + 1}月${_d.getDate()}日 周${_WD[_d.getDay()]} · 编辑 ${v} 篇`;
+        const _w = this._heatTip.offsetWidth || 150;
+        const _h = this._heatTip.offsetHeight || 30;
         const _vw = (window.innerWidth || 1280), _vh = (window.innerHeight || 800);
         let _l = ev.clientX + 14, _t = ev.clientY + 16;
         if (_l + _w > _vw) _l = ev.clientX - _w - 14;
         if (_t + _h > _vh) _t = ev.clientY - _h - 14;
-        tip.style.left = Math.max(4, _l) + "px";
-        tip.style.top = Math.max(4, _t) + "px";
+        this._heatTip.style.left = Math.max(4, _l) + "px";
+        this._heatTip.style.top = Math.max(4, _t) + "px";
       });
-      cell.addEventListener("mouseleave", _hideTip);
+      cell.addEventListener("mouseleave", () => this.hideHeatTip());
     }
   }
 
@@ -10023,7 +10350,8 @@ class WorkbenchPlugin extends Plugin {
     date.createSpan({ text: t.date.slice(5) });
     row.addEventListener("click", () => {
       const f = plugin.app.vault.getAbstractFileByPath(t.file);
-      if (f) plugin.app.workspace.getLeaf(false).openFile(f);
+      if (!f) return;
+      plugin.openNoteAtLine(f, t.line);
     });
     return row;
   }
@@ -10042,9 +10370,17 @@ class WorkbenchPlugin extends Plugin {
       return m && m[2].trim() === target;
     });
     if (idx < 0) return;
-    lines[idx] = t.done
-      ? lines[idx].replace(/\[(x|X)\]/, "[ ]")
-      : lines[idx].replace(/\[( |x|X)\]/, "[x]");
+    // 完成时间标记（Tasks 插件格式 ✅ YYYY-MM-DD / ✔ YYYY-MM-DD）
+    const DONE_MARK_RE = /\s*(?:✅|✔)\s*\d{4}-\d{2}-\d{2}\s*$/;
+    if (t.done) {
+      // 取消完成：移除完成时间标记
+      lines[idx] = lines[idx].replace(/\[(x|X)\]/, "[ ]").replace(DONE_MARK_RE, "");
+    } else {
+      // 完成：先清理旧标记防重复，再追加今天的完成时间
+      const dateStr = ymdOf(Date.now());
+      lines[idx] = lines[idx].replace(DONE_MARK_RE, "").replace(/\[( |x|X)\]/, "[x]");
+      lines[idx] = lines[idx].replace(/(\s*)$/, ` ✅ ${dateStr}$1`);
+    }
     try {
       await this.app.vault.process(f, () => lines.join("\n"));
     } catch (e) { console.warn("workbench toggle fail", e); return; }
@@ -10080,7 +10416,7 @@ class WorkbenchPlugin extends Plugin {
       close();
       if (item.kind === "note") {
         const f = this.app.vault.getAbstractFileByPath(item.path);
-        if (f) this.app.workspace.getLeaf(false).openFile(f);
+        if (f) this.openNoteOnce(f);
       } else if (item.kind === "command") {
         this.app.commands.executeCommandById(item.id);
       }
@@ -10091,15 +10427,22 @@ class WorkbenchPlugin extends Plugin {
       dd.empty();
       if (!q) { close(); return; }
       items = [];
-      // 笔记
+      // 笔记：多关键字 AND 搜索（空格分词），basename 全词匹配优先，不限文件夹深度
+      const kw = q.split(/\s+/).filter(Boolean);
       const notes = this.app.vault.getMarkdownFiles()
-        .filter(f => f.path.toLowerCase().includes(q))
-        .slice(0, 6)
-        .map(f => ({ kind: "note", label: f.basename, sub: f.path, path: f.path }));
+        .map(f => ({ f, ln: f.basename.toLowerCase(), lp: f.path.toLowerCase() }))
+        .filter(n => kw.every(k => n.ln.includes(k) || n.lp.includes(k)))
+        .sort((a, b) => {
+          const as = (a.ln.includes(q) ? 2 : 0) + (kw.every(k => a.ln.includes(k)) ? 1 : 0);
+          const bs = (b.ln.includes(q) ? 2 : 0) + (kw.every(k => b.ln.includes(k)) ? 1 : 0);
+          return bs - as || a.ln.localeCompare(b.ln, "zh-CN");
+        })
+        .slice(0, 20)
+        .map(n => ({ kind: "note", label: n.f.basename, sub: n.f.path, path: n.f.path }));
       // 命令
       const cmds = this.app.commands.listCommands()
         .filter(c => (c.name || "").toLowerCase().includes(q))
-        .slice(0, 6)
+        .slice(0, 10)
         .map(c => ({ kind: "command", label: c.name, sub: c.id, id: c.id }));
       items = [...notes, ...cmds];
       if (!items.length) {
@@ -10136,7 +10479,7 @@ class WorkbenchPlugin extends Plugin {
   }
 
   /* 日历 + 黄历详情 */
-  renderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate) {
+  renderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate, activityByKey) {
     // 头部
     const head = card.createDiv({ cls: "wb-cal-head" });
     const t1 = lunarLib.Solar.fromYmd(state.year, state.month, 1).getLunar();
@@ -10154,7 +10497,7 @@ class WorkbenchPlugin extends Plugin {
     const nav = head.createDiv({ cls: "wb-cal-nav" });
     const mkBtn = (txt, fn) => {
       const b = nav.createEl("button", { text: txt });
-      b.addEventListener("click", () => { fn(); this.rerenderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate); });
+      b.addEventListener("click", () => { fn(); this.rerenderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate, activityByKey); });
       return b;
     };
     mkBtn("‹", () => { state.month--; if (state.month < 1) { state.month = 12; state.year--; } });
@@ -10168,6 +10511,7 @@ class WorkbenchPlugin extends Plugin {
     legend.createSpan({ text: "● 节日", cls: "wb-lg-fest" });
     legend.createSpan({ text: "● 节气", cls: "wb-lg-term" });
     legend.createSpan({ text: "● 假期", cls: "wb-lg-holiday" });
+    legend.createSpan({ text: "● 生活", cls: "wb-lg-act" });
 
     // 网格
     const grid = card.createDiv({ cls: "wb-cal-grid" });
@@ -10211,57 +10555,74 @@ class WorkbenchPlugin extends Plugin {
       const lunar = solar.getLunar();
       const jq = lunar.getJieQi();
       const lfest = lunar.getFestivals() || [];
-      const sfest = solar.getFestivals() || [];
+      const sfest = [...(solar.getFestivals() || [])];
+      const _md = `${String(c.m).padStart(2, "0")}-${String(c.d).padStart(2, "0")}`;
+      const _ext = EXTRA_SOLAR_FEST[_md];
+      if (_ext) sfest.push(_ext);
       const oFest = lunar.getOtherFestivals() || [];
       const hol = (HOLIDAYS[String(c.y)] || {})[key];
       if (hol !== undefined && hol !== null) cell.addClass("wb-holiday");
       else if (hol === null) cell.addClass("wb-workday");
       else if (dow === 0 || dow === 6) {
-        if (weekendRest(this.settings, c.y, c.m, c.d, dow)) cell.addClass("wb-weekend");
+        const _rest = this.dataCache && this.dataCache.data ? this.dataCache.data.weekRest : null;
+        if (restFromTable(_rest, c.y, c.m, c.d, dow)) cell.addClass("wb-restday");
         else cell.addClass("wb-workday");
       }
 
       const num = cell.createDiv({ cls: "wb-day-num", text: String(c.d) });
       const festParts = [];
-      if (hol || lfest.length || sfest.length) festParts.push({ t: hol || lfest[0] || sfest[0], k: "wb-fest" });
+      if (hol) festParts.push({ t: hol, k: "wb-hol" });
+      if (lfest.length) festParts.push({ t: lfest[0], k: "wb-fest" });
+      if (sfest.length) festParts.push({ t: sfest[0], k: "wb-fest" });
       if (jq) festParts.push({ t: jq, k: "wb-jq" });
       if (festParts.length) {
         festParts.forEach(p => cell.createDiv({ cls: "wb-day-fest " + p.k, text: p.t }));
       } else {
         cell.createDiv({ cls: "wb-day-lunar", text: lunar.getDayInChinese() });
       }
+      const acts = (activityByKey && activityByKey.get(key)) || null;
+      if (acts && acts.length) {
+        const at = cell.createDiv({ cls: "wb-day-act", text: acts.map(a => a.text).join("、") });
+        if (typeof at.style.setProperty === "function") at.style.setProperty("--act-color", acts[0].color); else at.style.setProperty = acts[0].color;
+      }
       const badges = cell.createDiv({ cls: "wb-day-badges" });
       if (hol !== undefined && hol !== null) badges.createSpan({ cls: "wb-badge wb-bg-holiday", title: hol });
       if (jq) badges.createSpan({ cls: "wb-badge wb-bg-term", title: "节气" });
       if (lfest.length || sfest.length) badges.createSpan({ cls: "wb-badge wb-bg-fest", title: "节日" });
-      const tasks = tasksByDate[key];
-      if (tasks && tasks.length) {
-        badges.createSpan({ cls: "wb-badge wb-bg-task", title: `${tasks.length} 个任务` });
-        const cnt = cell.createDiv({ cls: "wb-day-tcnt", text: String(tasks.length) });
-        const hasOverdue = tasks.some(t => t.date < todayStr());
+      if (acts && acts.length) {
+        const ab = badges.createSpan({ cls: "wb-badge wb-bg-act", title: acts.map(a => a.text).join("，") });
+        if (typeof ab.style.setProperty === "function") ab.style.setProperty("--act-color", acts[0].color); else ab.style.setProperty = acts[0].color;
+      }
+      const allT = allTasksByDate[key];
+      const activeT = tasksByDate[key] || [];
+      if (allT && allT.length) {
+        badges.createSpan({ cls: "wb-badge wb-bg-task", title: `${allT.length} 个任务（${activeT.length} 未完成）` });
+        const cnt = cell.createDiv({ cls: "wb-day-tcnt", text: String(activeT.length) });
+        const hasOverdue = activeT.some(t => t.date < todayStr());
         if (hasOverdue) cnt.addClass("wb-overdue");
       }
       const bd = birthdayByKey[key];
       if (bd && bd.length) {
+        badges.createSpan({ cls: "wb-badge wb-bg-bday", title: bd.map(e => (e.nickname || e.name) + (e.age != null ? " " + e.age + "岁" : "")).join("，") });
         cell.createDiv({ cls: "wb-day-bd", text: "🎂 " + bd.map(e => (e.nickname || e.name) + (e.age != null ? e.age + "岁" : "")).join(",") });
       }
 
       cell.addEventListener("click", () => {
         state.selected = key;
-        this.renderDayDetail(card, state, tasksByDate, birthdayByKey, key, allTasksByDate);
+        this.renderDayDetail(card, state, tasksByDate, birthdayByKey, key, allTasksByDate, activityByKey);
         card.querySelectorAll(".wb-day").forEach(el2 => el2.toggleClass("wb-sel", el2 === cell));
       });
     }
 
-    this.renderDayDetail(card, state, tasksByDate, birthdayByKey, state.selected, allTasksByDate);
+    this.renderDayDetail(card, state, tasksByDate, birthdayByKey, state.selected, allTasksByDate, activityByKey);
   }
 
-  rerenderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate) {
+  rerenderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate, activityByKey) {
     card.empty();
-    this.renderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate);
+    this.renderCalendar(card, state, tasksByDate, birthdayEvents, allTasksByDate, activityByKey);
   }
 
-  renderDayDetail(card, state, tasksByDate, birthdayByKey, key, allTasksByDate) {
+  renderDayDetail(card, state, tasksByDate, birthdayByKey, key, allTasksByDate, activityByKey) {
     const old = card.querySelector(".wb-daydetail");
     if (old) old.remove();
     const [y, m, d] = key.split("-").map(Number);
@@ -10279,10 +10640,13 @@ class WorkbenchPlugin extends Plugin {
     left.createDiv({ cls: "wb-dd-ganzhi", text: `${lunar.getMonthInGanZhi()}月 ${lunar.getDayInGanZhi()}日 · ${lunar.getShengxiao()}` });
     const jq = lunar.getJieQi();
     if (jq) left.createDiv({ cls: "wb-dd-jieqi", text: `⚡ ${jq}` });
-    const festAll = [...(lunar.getFestivals() || []), ...(solar.getFestivals() || []), ...(lunar.getOtherFestivals() || [])];
+    const _md2 = `${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const festAll = [...(lunar.getFestivals() || []), ...(solar.getFestivals() || []), ...(lunar.getOtherFestivals() || []), ...(EXTRA_SOLAR_FEST[_md2] ? [EXTRA_SOLAR_FEST[_md2]] : [])];
     if (festAll.length) left.createDiv({ cls: "wb-dd-fest", text: "🎉 " + festAll.slice(0, 3).join(" · ") });
     const bd = birthdayByKey[key];
     if (bd && bd.length) left.createDiv({ cls: "wb-dd-bd", text: "🎂 " + bd.map(e => (e.nickname || e.name) + (e.age != null ? " " + e.age + "岁" : "") + "（" + e.label + "）").join("，") });
+    const acts = (activityByKey && activityByKey.get(key)) || [];
+    if (acts.length) left.createDiv({ cls: "wb-dd-act", text: "● " + acts.map(a => a.name).join("，") });
 
     const yi = lunar.getDayYi() || [];
     const ji = lunar.getDayJi() || [];
@@ -10329,13 +10693,17 @@ class WorkbenchView extends ItemView {
     this.registerEvent(this.app.metadataCache.on("changed", () => {
       this.plugin.tasksCache.stale = true;
       this.plugin.birthdayCache.stale = true;
+      this.plugin.activityCache.stale = true;
+      this.plugin.dataCache.stale = true;
       if (this.contentEl) this.render();
     }));
   }
 
   async onClose() {
+    this.hideHeatTip();
     this.flushEditLog();
-    if (this._heatRO) { this._heatRO.disconnect(); this._heatRO = null; }}
+    if (this._heatRO) { this._heatRO.disconnect(); this._heatRO = null; }
+  }
 
   async render() {
     if (this.state.loading || !this.contentEl) return;
@@ -10375,8 +10743,8 @@ class WorkbenchSettingTab extends PluginSettingTab {
         const n = parseFloat(v); if (!isNaN(n)) { this.plugin.settings.longitude = n; this.plugin.weatherCache.stale = true; await this.plugin.saveSettings(); }
       }));
 
-    new Setting(containerEl).setName("生日文件").setDesc("存放「姓名，农历月日」的笔记路径（相对库根目录）")
-      .addText(t => t.setValue(this.plugin.settings.birthdayFile).onChange(async v => { this.plugin.settings.birthdayFile = v; this.plugin.birthdayCache.stale = true; await this.plugin.saveSettings(); }));
+    new Setting(containerEl).setName("数据文件").setDesc("统一数据源笔记路径（相对库根目录），含「## 生日日期」「## 单双休安排」「## 生活安排」三个区块")
+      .addText(t => t.setValue(this.plugin.settings.dataFile).onChange(async v => { this.plugin.settings.dataFile = v.trim() || DATA_FILE_DEFAULT; this.plugin.dataCache.stale = true; this.plugin.birthdayCache.stale = true; await this.plugin.saveSettings(); }));
 
     new Setting(containerEl).setName("任务排除文件夹").setDesc("扫描任务时排除的文件夹，逗号分隔")
       .addText(t => t.setValue(this.plugin.settings.excludeFolders.join(",")).onChange(async v => {
@@ -10395,52 +10763,7 @@ class WorkbenchSettingTab extends PluginSettingTab {
       .addToggle(t => t.setValue(this.plugin.settings.openOnStartup).onChange(async v => { this.plugin.settings.openOnStartup = v; await this.plugin.saveSettings(); }));
 
     containerEl.createEl("h3", { text: "轮休设置" });
-    new Setting(containerEl).setName("周末休息模式").setDesc("单双轮休：单休周只休一天，按奇偶周交替；手动：逐个周末指定")
-      .addDropdown(dd => dd.addOption("double", "每周双休").addOption("single-double", "单双轮休").addOption("manual", "手动逐周")
-        .setValue(this.plugin.settings.restMode)
-        .onChange(async v => { this.plugin.settings.restMode = v; await this.plugin.saveSettings(); }));
-    new Setting(containerEl).setName("单休周休息日").setDesc("单休周休哪一天（另一天上班）")
-      .addDropdown(dd => dd.addOption("sat", "休周六").addOption("sun", "休周日")
-        .setValue(this.plugin.settings.singleDay)
-        .onChange(async v => { this.plugin.settings.singleDay = v; await this.plugin.saveSettings(); }));
-    new Setting(containerEl).setName("当前周状态").setDesc("本周是单休还是双休，轮休按此顺序往下交替")
-      .addDropdown(dd => dd.addOption("single", "本周单休").addOption("double", "本周双休")
-        .setValue(this.plugin.settings.sdStart)
-        .onChange(async v => { this.plugin.settings.sdStart = v; await this.plugin.saveSettings(); }));
-    // 手动轮休表：折叠 + 年份切换 + 全年周列表
-    const _det = containerEl.createEl("details", { cls: "wb-rest-details" });
-    _det.createEl("summary", { text: "手动轮休表（全年逐周，点击展开）", cls: "wb-rest-summary" });
-    const _curYear = new Date().getFullYear();
-    let _selYear = _curYear;
-    const _mw = this.plugin.settings.manualWeeks || (this.plugin.settings.manualWeeks = {});
-    const _renderWeeks = () => {
-      _det.querySelectorAll(".wb-rest-week").forEach(e => e.remove());
-      const mwYear = _mw[String(_selYear)] || (_mw[String(_selYear)] = {});
-      const wends = yearWeekends(_selYear);
-      Object.keys(wends).sort((a, b) => +a - +b).forEach(wk => {
-        const [sat, sun] = wends[wk];
-        const _label = (sat.getMonth() + 1) + "/" + sat.getDate() + " - " + (sun.getMonth() + 1) + "/" + sun.getDate() + "（第" + wk + "周）";
-        new Setting(_det).setName(_label).setClass("wb-rest-week")
-          .addDropdown(dd => dd.addOption("double", "双休").addOption("sat", "只休周六").addOption("sun", "只休周日")
-            .setValue(mwYear[String(wk)] || "double")
-            .onChange(async v => { mwYear[String(wk)] = v; await this.plugin.saveSettings(); }));
-      });
-    };
-    new Setting(_det).setName("年份").setDesc("切换年份查看/配置该年轮休表（每年独立保存）")
-      .addDropdown(dd => {
-        for (let y = _curYear - 1; y <= _curYear + 2; y++) dd.addOption(String(y), String(y) + "年");
-        return dd.setValue(String(_selYear)).onChange(async v => { _selYear = +v; _renderWeeks(); });
-      })
-      .addButton(b => b.setButtonText("复制上一年").onClick(async () => {
-        const src = _mw[String(_selYear - 1)] || {};
-        _mw[String(_selYear)] = JSON.parse(JSON.stringify(src));
-        await this.plugin.saveSettings(); _renderWeeks();
-      }))
-      .addButton(b => b.setButtonText("清空全年").onClick(async () => {
-        _mw[String(_selYear)] = {};
-        await this.plugin.saveSettings(); _renderWeeks();
-      }));
-    _renderWeeks();
+    containerEl.createEl("div", { cls: "wb-set-note", text: "单双休由「数据文件 → ## 单双休安排」表格读取（每周一行：周期 / 日期 / 休息日）。休息日列填「周日」=单休，填「周六、周日」=双休。" });
 
     containerEl.createEl("h3", { text: "模块开关" });
     ["bannerEnabled", "queryEnabled", "weatherEnabled", "yearProgressEnabled", "todayTasksEnabled", "birthdaysEnabled", "calendarEnabled"].forEach(k => {
@@ -10448,12 +10771,19 @@ class WorkbenchSettingTab extends PluginSettingTab {
       new Setting(containerEl).setName(label)
         .addToggle(t => t.setValue(this.plugin.settings[k]).onChange(async v => { this.plugin.settings[k] = v; await this.plugin.saveSettings(); }));
     });
+
+    this.renderActivitiesNote(containerEl);
+  }
+
+  renderActivitiesNote(containerEl) {
+    containerEl.createEl("h3", { text: "生活安排" });
+    containerEl.createEl("div", { cls: "wb-set-note", text: "生活安排（回家、旅行、老爸休息等）由「数据文件 → ## 生活安排」表格读取。表格两列：日期 / 名称。日期支持 20261001（单日）、20261002-07（范围）、20261007、14、21、28（多段，后续省略年月）。日历以紫色「● 生活」显示，日期详情可见当天生活安排。" });
   }
 }
 
 /* 测试钩子（仅用于构建期自测） */
 if (typeof globalThis !== "undefined") {
-  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, bodyText, bodyHash, parseTaskTime, isoWeek, weekendRest, yearWeekends, heatmapSection, heatmapPendingDates, HEATMAP_LOG_PATH, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, fetchOpenMeteoExtra, QW_ICONS };
+  globalThis.__wb_test = { parseBirthdayDate, parseCnDay, lunarHasDay, lunarBirthdaySolar, lunarBirthdayAge, lunarMonthCn, fmtDate, dayOfYear, daysInYear, dailyQuote, splitQuote, bodyText, bodyHash, parseFmTime, parseTaskTime, isoWeek, weekendRest, yearWeekends, heatmapSection, heatmapPendingDates, HEATMAP_LOG_PATH, expandActivityDates, buildActivityMap, ACTIVITY_DEFAULT_COLOR, expandLifeDates, parseDataFile, restFromTable, parseLifeRow, lunarLib, fetchWeather, fetchQWeather, fetchQWeatherExtra, fetchOpenMeteoExtra, QW_ICONS };
 }
 
 module.exports = WorkbenchPlugin;

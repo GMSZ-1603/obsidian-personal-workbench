@@ -9767,7 +9767,9 @@ class WorkbenchPlugin extends Plugin {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1).getTime();
     const yearStart = new Date(now.getFullYear(), 0, 1).getTime();
-    const weekStart = dayStart - 6 * 86400000;
+    // 本周=自然周（周一~周日）：今天 0 点回退到本周一 0 点（v1.5.26 起；原为"今天-6天"滚动 7 天窗口）
+    const _dowMon = (new Date(now.getFullYear(), now.getMonth(), now.getDate()).getDay() + 6) % 7; // 周一=0 … 周日=6
+    const weekStart = dayStart - _dowMon * 86400000;
     // 统计策略：先按全部 md 笔记的最后编辑时间(mtime)建立基线，再用编辑日志按天覆盖
 
     let total = 0, newMonth = 0, newWeek = 0, newQuarter = 0, newYear = 0, orphan = 0;

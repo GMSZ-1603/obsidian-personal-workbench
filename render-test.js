@@ -594,7 +594,7 @@ const app = {
   console.log("== 统计口径（仅正文修改计数）==");
   // 取真实库中 mtime 在本周的 md 笔记（排除 excludeFolders / neverEdited ctime≈mtime / 附件）
   const _now2 = Date.now();
-  const _ws = (() => { const d = new Date(_now2); d.setHours(0, 0, 0, 0); return d.getTime() - 6 * 86400000; })();
+  const _ws = (() => { const d = new Date(_now2); d.setHours(0, 0, 0, 0); return d.getTime() - ((d.getDay() + 6) % 7) * 86400000; })(); // 自然周（周一0点起，与插件 v1.5.26 同口径）
   const _exDir2 = (p) => (plugin.settings.excludeFolders || []).some(z => z && (p === z || p.toLowerCase().startsWith(z.toLowerCase() + "/")));
   const _pick2 = files.find(f => f.extension === "md" && f.stat.mtime >= _ws && f.stat.mtime <= _now2 && Math.abs(f.stat.mtime - f.stat.ctime) > 3000 && !_exDir2(f.path));
   if (_pick2) {
