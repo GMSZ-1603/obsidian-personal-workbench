@@ -2,7 +2,7 @@
 # bat 启动器会以 UTF-8 BOM 读取本脚本，中文路径在任何代码页下都正确
 [Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding(936)
 $ErrorActionPreference = "Stop"
-$SHARE   = "Y:\wb-plugin"
+$SHARE   = "Y:\Obsidian插件同步\个人工作台"
 $DST     = "D:\Obsidian\Second Brain\.obsidian\plugins\personal-workbench"
 $DOCDST  = "D:\Obsidian\Second Brain\安排"
 
