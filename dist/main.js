@@ -10178,45 +10178,26 @@ class WorkbenchPlugin extends Plugin {
       splitQuote(dailyQuote(now.getFullYear(), now.getMonth() + 1, now.getDate())).forEach(seg => lq.createDiv({ cls: "wb-lunar-verse", text: seg }));
     }
 
-    /* 年度进度（公历 + 农历） */
+    /* 年度进度 */
     if (this.settings.yearProgressEnabled) {
       const card = left.createDiv({ cls: "wb-card" });
       card.createDiv({ cls: "wb-card-hd" }).createDiv({ cls: "wb-card-tt", text: "年度进度" });
-      // 公历
       const pct = Math.round((dayOfYear(now) / daysInYear(now.getFullYear())) * 1000) / 10;
+      // 干支年（括号标注在公历年后）
+      let ganzhi = "";
+      try {
+        ganzhi = lunarLib.Solar.fromYmd(now.getFullYear(), now.getMonth() + 1, now.getDate()).getLunar().getYearInGanZhi();
+      } catch (e) { /* 忽略 */ }
       const p = card.createDiv({ cls: "wb-progress" });
       const pv = p.createDiv({ cls: "wb-progress-pct" });
       pv.textContent = pct + "%";
-      pv.createSpan({ cls: "wb-progress-year", text: String(now.getFullYear()) + "年" });
+      pv.createSpan({ cls: "wb-progress-year", text: String(now.getFullYear()) + "年" + (ganzhi ? `（${ganzhi}年）` : "") });
       const bar = p.createDiv({ cls: "wb-progress-bar" });
       const fill = bar.createDiv({ cls: "wb-progress-fill" });
       fill.style.width = Math.min(100, pct) + "%";
       const row = p.createDiv({ cls: "wb-progress-row" });
       row.createSpan({ text: `已过 ${dayOfYear(now)} 天` });
       row.createSpan({ text: `剩余 ${daysInYear(now.getFullYear()) - dayOfYear(now)} 天` });
-      // 农历年（春节 → 次年春节）
-      try {
-        const solarNow = lunarLib.Solar.fromYmd(now.getFullYear(), now.getMonth() + 1, now.getDate());
-        const lunarNow = solarNow.getLunar();
-        const ly = lunarNow.getYear();
-        const cs = lunarLib.Lunar.fromYmd(ly, 1, 1).getSolar();
-        const ns = lunarLib.Lunar.fromYmd(ly + 1, 1, 1).getSolar();
-        const DAY = 86400000;
-        const dt = (s) => new Date(s.getYear(), s.getMonth() - 1, s.getDay()).getTime();
-        const lPassed = Math.round((dt(solarNow) - dt(cs)) / DAY);
-        const lTotal = Math.round((dt(ns) - dt(cs)) / DAY);
-        const lPct = Math.max(0, Math.min(100, Math.round((lPassed / lTotal) * 1000) / 10));
-        const lp = card.createDiv({ cls: "wb-progress wb-progress-lunar" });
-        const lpv = lp.createDiv({ cls: "wb-progress-pct wb-progress-pct-lunar" });
-        lpv.textContent = lPct + "%";
-        lpv.createSpan({ cls: "wb-progress-year", text: lunarNow.getYearInGanZhi() + "年" });
-        const lbar = lp.createDiv({ cls: "wb-progress-bar" });
-        const lfill = lbar.createDiv({ cls: "wb-progress-fill wb-progress-fill-lunar" });
-        lfill.style.width = lPct + "%";
-        const lrow = lp.createDiv({ cls: "wb-progress-row" });
-        lrow.createSpan({ text: `已过 ${lPassed} 天` });
-        lrow.createSpan({ text: `剩余 ${lTotal - lPassed} 天` });
-      } catch (e) { /* 农历计算异常时静默降级，只显示公历 */ }
     }
 
     /* 今日任务 + 逾期任务 + 后续任务 */
