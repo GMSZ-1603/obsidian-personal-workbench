@@ -10194,6 +10194,8 @@ class WorkbenchPlugin extends Plugin {
       const p = card.createDiv({ cls: "wb-progress" });
       const pv = p.createDiv({ cls: "wb-progress-pct" });
       pv.textContent = pct + "%";
+      pv.createSpan({ cls: "wb-progress-event", text: "（元旦）" });
+      pv.createSpan({ cls: "wb-progress-deadline", text: `${now.getFullYear() + 1}年1月1日` });
       const bar = p.createDiv({ cls: "wb-progress-bar" });
       const fill = bar.createDiv({ cls: "wb-progress-fill" });
       fill.style.width = Math.min(100, pct) + "%";
@@ -10214,6 +10216,8 @@ class WorkbenchPlugin extends Plugin {
         const lp = card.createDiv({ cls: "wb-progress wb-progress-lunar" });
         const lpv = lp.createDiv({ cls: "wb-progress-pct wb-progress-pct-lunar" });
         lpv.textContent = lPct + "%";
+        lpv.createSpan({ cls: "wb-progress-event", text: "（春节）" });
+        lpv.createSpan({ cls: "wb-progress-deadline", text: `${ns.getYear()}年${ns.getMonth()}月${ns.getDay()}日` });
         const lbar = lp.createDiv({ cls: "wb-progress-bar" });
         const lfill = lbar.createDiv({ cls: "wb-progress-fill wb-progress-fill-lunar" });
         lfill.style.width = lPct + "%";
