@@ -227,7 +227,7 @@
 .wb-wx-e { font-size: 10.5px; color: #4e586c; line-height: 1.5; }
 .wb-wx-warn { margin-top: 8px; font-size: 11px; color: var(--wb-warn); background: color-mix(in srgb, var(--wb-warn) 14%, transparent); border-radius: 6px; padding: 3px 8px; }
 .wb-wx-empty { font-size: 12px; color: var(--wb-muted); padding: 8px 0; }
-.wb-wx-forecast { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 12px; }
+.wb-wx-forecast { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 12px; }
 .wb-wx-f { text-align: center; font-size: 10px; color: var(--wb-muted); }
 .wb-wx-fday { display: block; font-size: 10px; }
 .wb-wx-ic { display: block; font-size: 14px; margin: 2px 0; }

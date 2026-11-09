@@ -1641,10 +1641,10 @@ class WorkbenchPlugin extends Plugin {
         meta.createDiv({ cls: "wb-wx-cond", text: w[0] });
         meta.createDiv({ text: `体感 ${weather.feels}°C · 湿度 ${weather.humidity}%` });
         meta.createDiv({ text: `风 ${weather.wind} km/h` });
-        // 6 天预报
+        // 7 天预报
         const fc = card.createDiv({ cls: "wb-wx-forecast" });
         const wnames = ["周五", "周六", "周日", "周一", "周二", "周三", "周四"];
-        weather.list.slice(0, 6).forEach((item, i) => {
+        weather.list.slice(0, 7).forEach((item, i) => {
           const f = fc.createDiv({ cls: "wb-wx-f" });
           f.createSpan({ cls: "wb-wx-fday", text: i === 0 ? "今天" : wnames[(now.getDay() - 5 + i + 7) % 7] });
           const c = WMO[item.code] || QW_ICONS[item.code] || ["", ""];
