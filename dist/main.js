@@ -10178,16 +10178,17 @@ class WorkbenchPlugin extends Plugin {
       splitQuote(dailyQuote(now.getFullYear(), now.getMonth() + 1, now.getDate())).forEach(seg => lq.createDiv({ cls: "wb-lunar-verse", text: seg }));
     }
 
-    /* 年度进度（公历 + 农历，年份顶部居中） */
+    /* 年度进度（公历 + 农历，年份在标题行右侧） */
     if (this.settings.yearProgressEnabled) {
       const card = left.createDiv({ cls: "wb-card" });
-      card.createDiv({ cls: "wb-card-hd" }).createDiv({ cls: "wb-card-tt", text: "年度进度" });
-      // 年份行（顶部居中）
+      // 卡片头部：标题左 + 年份右
       let ganzhi = "";
       try {
         ganzhi = lunarLib.Solar.fromYmd(now.getFullYear(), now.getMonth() + 1, now.getDate()).getLunar().getYearInGanZhi();
       } catch (e) {}
-      card.createDiv({ cls: "wb-progress-yearhead", text: String(now.getFullYear()) + "年" + (ganzhi ? `（${ganzhi}年）` : "") });
+      const hd = card.createDiv({ cls: "wb-card-hd" });
+      hd.createDiv({ cls: "wb-card-tt", text: "年度进度" });
+      hd.createDiv({ cls: "wb-card-year", text: String(now.getFullYear()) + "年" + (ganzhi ? `（${ganzhi}年）` : "") });
       // 公历
       const pct = Math.round((dayOfYear(now) / daysInYear(now.getFullYear())) * 1000) / 10;
       const p = card.createDiv({ cls: "wb-progress" });
